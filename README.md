@@ -36,6 +36,6 @@ npm run simulate
 
 ## Deploy
 
-Set the three env vars on the host, run `npx prisma db push`, then `npm run build` and `npm start`. Seed against that same `DATABASE_URL` with `npm run seed`, or use `/admin`.
+Set `DATABASE_URL`, `TMDB_READ_TOKEN`, and `ADMIN_SECRET` on the host, run `npx prisma db push`, then `npm run build` and `npm start`. Seed against that same `DATABASE_URL` with `npm run seed`, or use `/admin`.
 
-You need a TMDB v4 read token and a Postgres database. Nothing else is manual.
+The Netlify build runs `scripts/provision-db.mjs` first. If `DATABASE_URL` is already set, that database is used. Otherwise the build provisions a temporary Postgres database, writes it to gitignored `.env.production` so the server can read it, and restores the actor and director catalog. The claim URL is printed in the build log. Unclaimed databases are deleted after 24 hours, and a later build that cannot reach the old one starts a fresh database, which clears save slots.
