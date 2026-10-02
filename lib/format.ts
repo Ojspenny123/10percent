@@ -32,3 +32,10 @@ export function billingLabel(billing: number): string {
 export function pct(value: number): string {
   return `${Math.round(value)}`;
 }
+
+export function backendLabel(style: string | undefined, points: number): string {
+  if (!style || style === "none" || points <= 0) return "No backend";
+  if (style === "first_dollar") return `${points} first-dollar pts`;
+  if (style === "net") return `${points} net pts`;
+  return `${points} pts of box office`;
+}

@@ -323,8 +323,6 @@ export function renewalQuote(state: GameState, client: Client, project: Project,
 
 export function payReleaseExtras(state: GameState, project: Project): void {
   if (project.kind !== "film") return;
-  const gross = project.totalGross ?? 0;
-  const cost = project.budget + project.marketing;
   for (const member of project.cast) {
     if (!member.isPlayerClient) continue;
     const client = clientOf(state, member.personId);
@@ -335,18 +333,6 @@ export function payReleaseExtras(state: GameState, project: Project): void {
       client.stats.buzz = Math.max(1, client.stats.buzz - 8);
       client.stats.reputation = Math.max(1, client.stats.reputation - 5);
       client.statWhy.buzz = `${project.title} missed as a tentpole. Buzz and reputation took the extra hit.`;
-    }
-    for (const bonus of member.bonuses ?? []) {
-      if (bonus.paid) continue;
-      if (gross < cost * bonus.multiple) continue;
-      bonus.paid = true;
-      const commission = Math.round(bonus.amount * (client.contract.commission / 100));
-      book(state, commission, `Box office bonus · ${client.name} · ${project.title}`, "bonus");
-    }
-    if (member.backend > 0 && (project.budgetTier === "tentpole" || project.budgetTier === "studio") && (client.fame === "A-list" || client.fame === "Icon")) {
-      const payout = Math.round((member.backend / 100) * gross);
-      const commission = Math.round(payout * (client.contract.commission / 100));
-      if (commission > 0) book(state, commission, `Backend points · ${client.name} · ${project.title}`, "bonus");
     }
   }
 }

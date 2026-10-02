@@ -123,6 +123,8 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
     existing.fee = offer.fee;
     existing.billing = offer.billing;
     existing.backend = offer.backend;
+    existing.backendStyle = offer.backendStyle;
+    existing.bonuses = offer.bonuses;
     existing.episodeFee = offer.episodeFee;
     existing.episodes = offer.episodes;
     existing.blocks = offer.blocks;
@@ -144,6 +146,7 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
     member.episodes = offer.episodes;
     member.blocks = offer.blocks;
     member.seasonNumber = offer.seasonNumber ?? (project.kind === "series" ? project.seasons[project.seasons.length - 1]?.number : undefined);
+    member.backendStyle = offer.backendStyle;
     member.bonuses = offer.bonuses;
     if (offer.deal && offer.episodeFee) {
       member.seriesDeal = {

@@ -17,6 +17,8 @@ const NAV = [
   ["Business", [
     ["/contracts", "Contracts"],
     ["/slate", "Slate"],
+    ["/productions", "Productions"],
+    ["/finance", "Finance"],
     ["/agency", "Agency"],
   ]],
   ["Industry", [

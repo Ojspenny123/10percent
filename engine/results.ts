@@ -178,7 +178,7 @@ export function satisfactionForWrap(rng: RngState, client: Client, project: Proj
 }
 
 function expectedRough(client: Client): number {
-  const table = { Unknown: 20_000, Working: 80_000, Known: 400_000, "A-list": 2_000_000, Icon: 8_000_000 };
+  const table = { Unknown: 40_000, Working: 200_000, Known: 480_000, "A-list": 8_500_000, Icon: 22_000_000 };
   return table[client.fame];
 }
 

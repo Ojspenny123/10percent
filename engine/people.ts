@@ -222,22 +222,29 @@ const ROLE_MULT: Record<RoleType, number> = {
 };
 
 const FAME_FEE: Record<FameTier, number> = {
-  Unknown: 25_000,
-  Working: 90_000,
-  Known: 450_000,
-  "A-list": 3_000_000,
-  Icon: 12_000_000,
+  Unknown: 40_000,
+  Working: 200_000,
+  Known: 480_000,
+  "A-list": 8_500_000,
+  Icon: 22_000_000,
 };
 
 export function expectedFee(fame: FameTier, role: RoleType, tier: BudgetTier): number {
   const tierMult: Record<BudgetTier, number> = {
-    "micro-indie": 0.28,
-    indie: 0.55,
-    mid: 1,
-    studio: 1.7,
-    tentpole: 3.1,
+    "micro-indie": 0.14,
+    indie: 0.32,
+    mid: 1.05,
+    studio: 1.55,
+    tentpole: 2.6,
   };
-  const raw = FAME_FEE[fame] * ROLE_MULT[role] * tierMult[tier];
+  let raw = FAME_FEE[fame] * ROLE_MULT[role] * tierMult[tier];
+  const lead = role === "Lead" || role === "Co-lead";
+  if (lead && (fame === "Working" || fame === "Known")) raw = Math.min(1_500_000, Math.max(50_000, raw));
+  if (lead && fame === "A-list" && (tier === "mid" || tier === "studio" || tier === "tentpole")) raw = Math.min(25_000_000, Math.max(5_000_000, raw));
+  if (lead && fame === "Icon" && (tier === "studio" || tier === "tentpole")) raw = Math.min(65_000_000, Math.max(20_000_000, raw));
+  if (lead && (fame === "A-list" || fame === "Icon") && (tier === "micro-indie" || tier === "indie")) {
+    raw = Math.min(fame === "Icon" ? 8_000_000 : 4_000_000, raw);
+  }
   return Math.max(5_000, Math.round(raw / 1000) * 1000);
 }
 

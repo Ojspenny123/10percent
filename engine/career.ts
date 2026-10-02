@@ -28,11 +28,11 @@ function clamp(n: number, min = 1, max = 99): number {
 export const PILOT_WEEKS = { start: 8, end: 20 };
 
 const EPISODE_BASE: Record<FameTier, number> = {
-  Unknown: 8_000,
-  Working: 25_000,
-  Known: 85_000,
-  "A-list": 275_000,
-  Icon: 650_000,
+  Unknown: 15_000,
+  Working: 45_000,
+  Known: 160_000,
+  "A-list": 500_000,
+  Icon: 1_400_000,
 };
 
 const ROLE_EPISODE: Record<RoleType, number> = {
@@ -397,10 +397,12 @@ export function shouldRecast(rng: RngState): boolean {
   return chance(rng, 0.5);
 }
 
-export function bucketFromLabel(label: string): "film" | "series" | "pilot" | "bonus" | "overhead" | "other" {
+export function bucketFromLabel(label: string): "film" | "series" | "pilot" | "bonus" | "backend" | "production" | "overhead" | "other" {
   const text = label.toLowerCase();
   if (text.includes("overhead") || text.includes("rent") || text.includes("salar")) return "overhead";
-  if (text.includes("bonus") || text.includes("backend")) return "bonus";
+  if (text.includes("production") || text.includes("loan") || text.includes("library")) return "production";
+  if (text.includes("backend")) return "backend";
+  if (text.includes("bonus")) return "bonus";
   if (text.includes("pilot")) return "pilot";
   if (text.includes("episode") || text.includes("series") || text.includes("season")) return "series";
   if (text.includes("commission")) return "film";
@@ -409,6 +411,10 @@ export function bucketFromLabel(label: string): "film" | "series" | "pilot" | "b
 
 export function migrateCareer(state: GameState): void {
   state.lastAutosave ??= { ...state.date };
+  state.productions ??= [];
+  state.loans ??= [];
+  state.payouts ??= [];
+  state.gameOver ??= false;
   for (const client of state.clients) backfillClient(client, state.date.year);
   for (const hold of state.holds ?? []) hold.kind ??= "personal";
   for (const entry of state.ledger ?? []) entry.bucket ??= bucketFromLabel(entry.label);
@@ -421,6 +427,8 @@ export function migrateCareer(state: GameState): void {
       season.releasedYear ??= season.premiere?.year;
     }
     for (const member of project.cast) {
+      if (member.backend > 0) member.backendStyle ??= "box_office";
+      else member.backendStyle ??= "none";
       if (project.kind === "series" && member.episodeFee == null && (member.role === "Lead" || member.role === "Series Regular" || member.role === "Recurring" || member.role === "Guest Star")) {
         const episodes = project.seasons[0]?.episodes ?? 8;
         member.episodes ??= member.role === "Guest Star" ? Math.min(2, episodes) : member.role === "Recurring" ? Math.max(1, Math.round(episodes / 2)) : episodes;

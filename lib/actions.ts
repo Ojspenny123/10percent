@@ -17,6 +17,16 @@ import {
   respondApproach,
   signClient,
   submitFestival,
+  abandonProduction,
+  attachCast,
+  attachDirector,
+  chooseConcept,
+  chooseDistribution,
+  developProduction,
+  financeProduction,
+  sellLibrary,
+  setMarketing,
+  takeEmergencyLoan,
   type Era,
   type GameState,
   type StaffRole,
@@ -136,6 +146,7 @@ export async function advanceAction(formData: FormData) {
     if (!(error instanceof SaveConflictError)) throw error;
     redirect(saveFailurePath("/dashboard", error));
   }
+  if (loaded.state.gameOver) redirect(withParams("/finance", { error: "The agency is closed." }));
   const mode = String(formData.get("mode") || "week");
   const catalog = await loadCatalog();
   const weeks = mode === "month" ? 4 : mode === "event" ? weeksUntilNextEvent(loaded.state) : 1;
@@ -312,4 +323,66 @@ export async function deleteSlotAction(formData: FormData) {
     redirect("/?notice=Slot%20deleted.");
   }
   redirect("/game?notice=Slot%20deleted.");
+}
+
+export async function developAction(formData: FormData) {
+  const genre = String(formData.get("genre") || "Drama");
+  const tier = String(formData.get("tier") || "micro-indie") as "micro-indie";
+  const shootInWeeks = Number(formData.get("shootInWeeks") || 10);
+  const shootWeeks = Number(formData.get("shootWeeks") || 5);
+  await withSave("/productions/new", formData, (state) => developProduction(state, genre, tier, shootInWeeks, shootWeeks));
+}
+
+export async function conceptAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const index = Number(formData.get("index") || 0);
+  await withSave(`/productions/${id}`, formData, (state) => chooseConcept(state, id, index));
+}
+
+export async function abandonAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  await withSave(`/productions/${id}`, formData, (state) => abandonProduction(state, id));
+}
+
+export async function directorAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const directorId = Number(formData.get("directorId"));
+  const catalog = await loadCatalog();
+  await withSave(`/productions/${id}`, formData, (state) => attachDirector(state, catalog, id, directorId));
+}
+
+export async function castAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const personId = Number(formData.get("personId"));
+  const role = String(formData.get("role") || "Lead") as "Lead";
+  const fee = Number(formData.get("fee") || 0);
+  const catalog = await loadCatalog();
+  await withSave(`/productions/${id}`, formData, (state) => attachCast(state, catalog, id, personId, role, fee));
+}
+
+export async function financeAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const plan = String(formData.get("plan") || "cash") as "cash";
+  await withSave(`/productions/${id}`, formData, (state) => financeProduction(state, id, plan));
+}
+
+export async function marketingAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const amount = Number(formData.get("amount") || 0);
+  await withSave(`/productions/${id}`, formData, (state) => setMarketing(state, id, amount));
+}
+
+export async function distributeAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const mode = String(formData.get("mode") || "theatrical") === "sale" ? "sale" : "theatrical";
+  await withSave(`/productions/${id}`, formData, (state) => chooseDistribution(state, id, mode));
+}
+
+export async function libraryAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  await withSave("/finance", formData, (state) => sellLibrary(state, id));
+}
+
+export async function emergencyLoanAction(formData: FormData) {
+  await withSave("/finance", formData, (state) => takeEmergencyLoan(state));
 }

@@ -6,7 +6,11 @@ export type FameTier = "Unknown" | "Working" | "Known" | "A-list" | "Icon";
 export type Medium = "Film" | "TV" | "Both";
 export type SeriesDealStyle = "single" | "guaranteed" | "option";
 export type PilotStatus = "shooting" | "awaiting" | "picked_up" | "passed" | "retooled";
-export type LedgerBucket = "film" | "series" | "pilot" | "bonus" | "overhead" | "other";
+export type LedgerBucket = "film" | "series" | "pilot" | "bonus" | "backend" | "production" | "overhead" | "other";
+export type BackendStyle = "none" | "box_office" | "first_dollar" | "net";
+export type FinancePlan = "cash" | "loan" | "investors" | "studio";
+export type DistributionChoice = "undecided" | "sale" | "theatrical";
+export type ProductionStage = "development" | "packaging" | "financed" | "released" | "abandoned";
 export type CareerStage = "Newcomer" | "Rising" | "Peak" | "Established" | "Declining" | "Comeback";
 export type Mood = "Thrilled" | "Content" | "Uneasy" | "Unhappy" | "Furious";
 export type WorkStatus = "AVAILABLE" | "IN_PREP" | "SHOOTING" | "POST_PRODUCTION" | "AIRING";
@@ -189,6 +193,7 @@ export type CastMember = {
   seriesDeal?: SeriesDeal;
   seasonNumber?: number;
   bonuses?: BoxBonus[];
+  backendStyle?: BackendStyle;
   /** Episodes already commissioned, so weekly series pay does not double-count. */
   episodesPaid?: number;
 };
@@ -269,6 +274,9 @@ export type Project = {
   cancelled: boolean;
   origin?: "pilot" | "straight" | "limited";
   pilot?: PilotHold;
+  /** Rare micro or low-budget film whose gross grew week to week. */
+  sleeper?: boolean;
+  streamingTotal?: number;
 };
 
 export type Offer = {
@@ -306,6 +314,10 @@ export type Offer = {
   bonuses?: BoxBonus[];
   willingness?: string;
   renewal?: boolean;
+  backendStyle?: BackendStyle;
+  /** Guaranteed upfront through a strong-gross estimate, before commission. */
+  earningsLow?: number;
+  earningsHigh?: number;
 };
 
 export type ApproachAsk = {
@@ -440,9 +452,11 @@ export type PilotHold = {
 };
 
 export type BoxBonus = {
+  /** 2 or 3 means a multiple of budget plus marketing. 0 is an awards bonus. */
   multiple: number;
   amount: number;
   paid?: boolean;
+  kind?: "gross" | "awards";
 };
 
 export type FranchiseFilm = {
@@ -457,6 +471,78 @@ export type FranchiseLock = {
   id: string;
   title: string;
   films: FranchiseFilm[];
+};
+
+export type ConceptOption = {
+  title: string;
+  logline: string;
+  hook: number;
+  scriptQuality: number;
+};
+
+export type ProductionEvent = {
+  date: GameDate;
+  title: string;
+  body: string;
+};
+
+export type WaterfallLine = {
+  label: string;
+  amount: number;
+  note: string;
+};
+
+export type Production = {
+  id: string;
+  projectId: string | null;
+  stage: ProductionStage;
+  genre: string;
+  tier: BudgetTier;
+  concepts: ConceptOption[];
+  conceptIndex: number | null;
+  hookRevealed: boolean;
+  directorId: number | null;
+  directorName: string;
+  directorFee: number;
+  directorPull: number;
+  directorAcclaim: number;
+  cast: CastMember[];
+  shootInWeeks: number;
+  shootWeeks: number;
+  plan: FinancePlan | null;
+  investorShare: number;
+  distributorFee: number;
+  distribution: DistributionChoice;
+  salePrice: number;
+  marketing: number;
+  budget: number;
+  events: ProductionEvent[];
+  waterfall?: { lines: WaterfallLine[]; agencyProfit: number };
+  sleeper: boolean;
+  librarySold: boolean;
+};
+
+export type Loan = {
+  id: string;
+  productionId: string | null;
+  label: string;
+  principal: number;
+  balance: number;
+  annualRate: number;
+  emergency: boolean;
+};
+
+export type TalentPayout = {
+  id: string;
+  projectId: string;
+  personId: number;
+  name: string;
+  kind: "backend" | "bonus" | "profit";
+  /** Talent receipt, or agency profit when kind is profit. */
+  amount: number;
+  commissionRate: number;
+  due: GameDate;
+  paid: boolean;
 };
 
 export type LedgerEntry = {
@@ -514,6 +600,11 @@ export type GameState = {
   ceremoniesRun: string[];
   /** In-game date of the last weekly autosave or manual save. Action writes do not move it. */
   lastAutosave?: GameDate;
+  productions?: Production[];
+  loans?: Loan[];
+  payouts?: TalentPayout[];
+  /** Set when emergency financing cannot cover a long cash hole. */
+  gameOver?: boolean;
 };
 
 export type ActionResult = {

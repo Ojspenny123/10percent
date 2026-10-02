@@ -2,7 +2,7 @@ import Link from "next/link";
 import { acceptOfferAction, counterOfferAction, declineOfferAction } from "@/lib/actions";
 import { Card, Empty, Explain, FlashBanner, PageHeader, buttonClass } from "@/components/ui";
 import { formatDate, pendingConflictMessage } from "@/engine";
-import { billingLabel, money } from "@/lib/format";
+import { backendLabel, billingLabel, money } from "@/lib/format";
 import { readSlot } from "@/lib/game";
 import { redirect } from "next/navigation";
 
@@ -60,14 +60,15 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                 {selected.seasonNumber ? <div><dt className="text-muted">Season</dt><dd>{selected.seasonNumber}{selected.renewal ? " · renewal" : ""}</dd></div> : null}
                 {selected.deal ? <div className="col-span-2"><dt className="text-muted">Deal</dt><dd>{selected.deal.style} · {selected.deal.seasons} season{selected.deal.seasons === 1 ? "" : "s"} · {Math.round(selected.deal.annualBump * 100)}% a year</dd></div> : null}
                 <div><dt className="text-muted">Billing</dt><dd>{billingLabel(selected.billing)}</dd></div>
-                <div><dt className="text-muted">Backend</dt><dd>{selected.backend} pts</dd></div>
+                <div><dt className="text-muted">Backend</dt><dd>{backendLabel(selected.backendStyle, selected.backend)}</dd></div>
+                {selected.earningsLow != null ? <div className="col-span-2"><dt className="text-muted">Expected earnings</dt><dd>{money(selected.earningsLow)} upfront, up to {money(selected.earningsHigh ?? selected.earningsLow)} if the film hits. Commission is taken when each piece is paid, including backend months later.</dd></div> : null}
                 <div><dt className="text-muted">Prestige</dt><dd><Explain tip={selected.prestigeWhy}>{selected.prestige}</Explain></dd></div>
                 <div><dt className="text-muted">Risk</dt><dd><Explain tip={selected.riskWhy}>{selected.risk}</Explain></dd></div>
                 <div><dt className="text-muted">Expires</dt><dd>{formatDate(selected.expires)}</dd></div>
               </dl>
               <p className="mt-3 text-sm">{selected.scriptNote}</p>
               {selected.willingness ? <p className="mt-2 text-sm text-muted">{selected.willingness}</p> : null}
-              {selected.bonuses?.length ? <p className="mt-2 text-sm">Box office bonuses: {selected.bonuses.map((bonus) => `${bonus.multiple}x budget ${money(bonus.amount)}`).join(", ")}. Backend {selected.backend} pts.</p> : null}
+              {selected.bonuses?.length ? <p className="mt-2 text-sm">Bonuses: {selected.bonuses.map((bonus) => bonus.kind === "awards" ? `awards win ${money(bonus.amount)}` : `${bonus.multiple}x budget ${money(bonus.amount)}`).join(", ")}. Paid through the waterfall, not on signing.</p> : null}
               {selected.blocks?.length ? <p className="mt-2 text-sm">Calendar: {selected.blocks.map((block) => `${formatDate(block.start)} · ${block.weeks} weeks · ${block.episodes} eps`).join("; ")}</p> : null}
               {conflict ? <p className="mt-3 rounded-xl bg-blush px-3 py-2 text-sm">{conflict}</p> : null}
               {params.warn ? (

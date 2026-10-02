@@ -1,6 +1,5 @@
 import { applyEventChoice, book, bumpRep, closeApproachInbox, closeInbox, pushApproach, tierBias } from "./actions";
 import {
-  backendPoints,
   buildBlocks,
   dealBlurb,
   episodeQuote,
@@ -10,7 +9,6 @@ import {
   pickDeal,
   seriesPremium,
   sideRng,
-  tentpoleBonuses,
 } from "./career";
 import {
   applyStay,
@@ -34,6 +32,8 @@ import {
   spawnSeries,
   tierForClient,
 } from "./generate";
+import { quotePackage } from "./money";
+import { advanceMoney, applySleeper, resolveInsolvency, scheduleTalentPay } from "./productions";
 import { agencyTier, clamp, clientFromCatalog, expectedFee, fameFromStar, isEligible, traitHints } from "./people";
 import { chance, float, int, pick } from "./rng";
 import {
@@ -122,6 +122,7 @@ function stepWeek(state: GameState, catalog: Catalog, options: AdvanceOptions): 
     }
   }
   payOverhead(state);
+  advanceMoney(state);
   payShootCommissions(state);
   resolvePilotDecisions(state);
   resolveWraps(state);
@@ -141,12 +142,7 @@ function stepWeek(state: GameState, catalog: Catalog, options: AdvanceOptions): 
   trim(state);
   state.lastAutosave = { ...state.date };
   migrateCareer(state);
-  if (state.agency.cash < 0) {
-    state.insolventWeeks += 1;
-    if (state.insolventWeeks === 1 || state.insolventWeeks % 4 === 0) {
-      inbox(state, "money", "The agency is in the red", "Overhead is outrunning commission. Sign someone, or let a client work.");
-    }
-  } else state.insolventWeeks = 0;
+  resolveInsolvency(state);
   state.agency.tier = agencyTier(state.agency.reputation);
   return paused;
 }
@@ -204,8 +200,10 @@ function resolveReleases(state: GameState, catalog: Catalog): void {
       continue;
     }
     scoreFilm(state, project);
+    applySleeper(state, project);
     updatePeopleForRelease(state, project);
     payReleaseExtras(state, project);
+    scheduleTalentPay(state, project);
     considerFranchise(state, project);
     applyReleaseVerdict(state, project);
     const gross = project.totalGross ?? 0;
@@ -722,16 +720,21 @@ function pushOffer(state: GameState, project: Project, client: Client, role: Rol
 function dressOffer(state: GameState, offer: Offer, project: Project, client: Client, role: RoleType): void {
   const quoted = offer.fee;
   if (project.kind === "film") {
-    const scale = project.budgetTier === "tentpole" || project.budgetTier === "studio"
-      ? 0.7 + client.filmStar / 75
-      : project.budgetTier === "indie" || project.budgetTier === "micro-indie"
-        ? 0.72
-        : 1;
-    offer.fee = Math.max(5_000, Math.round((offer.fee * scale) / 1000) * 1000);
-    offer.backend = backendPoints(client.fame, project.budgetTier, client.filmStar, offer.backend);
-    offer.bonuses = tentpoleBonuses(offer.fee, project.budgetTier, client.fame);
+    const priced = quotePackage({
+      fame: client.fame,
+      role,
+      tier: project.budgetTier,
+      filmStar: client.filmStar,
+      genre: project.genres[0] ?? "Drama",
+    });
+    offer.fee = priced.fee;
+    offer.backend = priced.points;
+    offer.backendStyle = priced.style;
+    offer.bonuses = priced.bonuses;
+    offer.earningsLow = priced.low;
+    offer.earningsHigh = priced.high;
     offer.pay = "flat";
-    offer.feeWhy = `${offer.feeWhy} Film star power ${client.filmStar} ${scale < 1 ? "keeps prestige work cheap" : "pushes a commercial quote"}.`;
+    offer.feeWhy = priced.why;
   } else {
     const season = project.seasons[project.seasons.length - 1];
     if (!season) return;

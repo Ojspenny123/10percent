@@ -178,11 +178,11 @@ export const STAFF_INFO: Record<
 };
 
 export const BUDGETS: Record<BudgetTier, { min: number; max: number; marketing: number }> = {
-  "micro-indie": { min: 400_000, max: 2_000_000, marketing: 0.35 },
-  indie: { min: 3_000_000, max: 12_000_000, marketing: 0.45 },
-  mid: { min: 15_000_000, max: 40_000_000, marketing: 0.55 },
-  studio: { min: 50_000_000, max: 90_000_000, marketing: 0.7 },
-  tentpole: { min: 120_000_000, max: 220_000_000, marketing: 0.6 },
+  "micro-indie": { min: 80_000, max: 490_000, marketing: 0.4 },
+  indie: { min: 500_000, max: 8_000_000, marketing: 0.45 },
+  mid: { min: 12_000_000, max: 40_000_000, marketing: 0.5 },
+  studio: { min: 45_000_000, max: 100_000_000, marketing: 0.6 },
+  tentpole: { min: 140_000_000, max: 250_000_000, marketing: 0.55 },
 };
 
 export const TIER_WEIGHTS: Record<string, BudgetTier[]> = {

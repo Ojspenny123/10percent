@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { renewAction } from "@/lib/actions";
 import { Card, Empty, PageHeader, buttonClass } from "@/components/ui";
 import { contractEnd, formatDate } from "@/engine";
-import { billingLabel, money } from "@/lib/format";
+import { backendLabel, billingLabel, money } from "@/lib/format";
 import { readSlot } from "@/lib/game";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +56,7 @@ export default async function ContractsPage() {
                   <td className="px-3 py-2">{member.role}</td>
                   <td className="px-3 py-2" title="Paid to the client. Your commission is this times their rate, collected when photography starts.">{money(member.fee)}</td>
                   <td className="px-3 py-2">{billingLabel(member.billing)}</td>
-                  <td className="px-3 py-2">{member.backend}</td>
+                  <td className="px-3 py-2">{backendLabel(member.backendStyle, member.backend)}{member.fee ? ` · upfront ${money(member.fee)}` : ""}</td>
                 </tr>
               ))}
             </tbody>

@@ -51,6 +51,10 @@ export function createGame(input: { agencyName: string; era: Era; seed: number; 
     lastTurn: ["The agency is open. Scout someone, or wait for them to call."],
     insolventWeeks: 0,
     ceremoniesRun: [],
+    productions: [],
+    loans: [],
+    payouts: [],
+    gameOver: false,
   };
   state.ledger.push({ date: { ...state.date }, label: "Opening cash", amount: 400_000, balance: 400_000 });
   const ranked = [...eligible].sort((a, b) => b.popularity - a.popularity);

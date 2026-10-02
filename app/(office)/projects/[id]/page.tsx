@@ -43,7 +43,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
             <div><dt className="text-muted">{project.kind === "film" ? "Release" : "Premiere"}</dt><dd>{formatDate(project.release)}</dd></div>
             {project.criticScore != null ? <div><dt className="text-muted">Critics</dt><dd><Explain tip={project.resultWhy?.critic ?? "Critic score"}>{project.criticScore}</Explain></dd></div> : null}
             {project.audienceScore != null ? <div><dt className="text-muted">Audience</dt><dd><Explain tip={project.resultWhy?.audience ?? "Audience score"}>{project.audienceScore}</Explain></dd></div> : null}
-            {project.profitLabel ? <div><dt className="text-muted">Result</dt><dd className="capitalize"><Explain tip={project.resultWhy?.profit ?? ""}>{project.profitLabel}</Explain></dd></div> : null}
+            {project.profitLabel ? <div><dt className="text-muted">Result</dt><dd className="capitalize"><Explain tip={project.resultWhy?.profit ?? ""}>{project.sleeper ? "Sleeper hit · " : ""}{project.profitLabel}</Explain></dd></div> : null}
             {season ? <div><dt className="text-muted">Season</dt><dd>{season.number} · {season.renewal.replace("_", " ")} · {season.episodesAired}/{season.episodes} eps</dd></div> : null}
           </dl>
           <p className="mt-3 text-sm text-muted">{project.scriptNote}</p>
@@ -64,6 +64,24 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           </ul>
         </Card>
       </div>
+      {(() => {
+        const owned = active.state.productions?.find((row) => row.projectId === project.id);
+        if (!owned?.waterfall) return null;
+        return (
+          <Card className="mt-4">
+            <h2 className="font-serif text-xl">Profit waterfall</h2>
+            <ul className="mt-3 space-y-2 text-sm">
+              {owned.waterfall.lines.map((line) => (
+                <li key={line.label} className="flex flex-wrap justify-between gap-2 border-b border-line pb-2">
+                  <span>{line.label}<span className="mt-1 block text-xs text-muted">{line.note}</span></span>
+                  <span>{money(line.amount)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-sm"><Link href={`/productions/${owned.id}`} className="text-teal hover:underline">Open the production file</Link></p>
+          </Card>
+        );
+      })()}
       {project.kind === "film" && project.weeklyGross.length > 0 ? (
         <Card className="mt-4">
           <h2 className="font-serif text-xl">Weekly domestic</h2>

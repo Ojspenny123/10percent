@@ -5,7 +5,7 @@ import { Card, Empty, Explain, FlashBanner, MoodDot, PageHeader, buttonClass } f
 import { formatDate, money } from "@/lib/format";
 import { readSlot } from "@/lib/game";
 import { loadCatalog } from "@/lib/catalog";
-import { absWeek, clientAttention, clientFromCatalog, contractEnd, describeAssignment, presentApproach } from "@/engine";
+import { absWeek, cashWarning, clientAttention, clientFromCatalog, contractEnd, describeAssignment, presentApproach } from "@/engine";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +30,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </form>
       </PageHeader>
       <FlashBanner notice={params.notice} error={params.error} warn={params.warn} />
+      {cashWarning(state) ? <p className="mb-4 rounded-2xl bg-blush px-3 py-2 text-sm">{cashWarning(state)}</p> : null}
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Card>
           <p className="text-sm text-muted">Cash</p>
