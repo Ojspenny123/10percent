@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Genre {
+  tmdbId Int    @id
+  name   String @unique
+}
+
+model MovieCache {
+  tmdbId         Int     @id
+  title          String
+  year           Int?
+  genreIds       Int[]
+  voteAverage    Float   @default(0)
+  popularity     Float   @default(0)
+  creditsScanned Boolean @default(false)
+}
+
+model SeedCandidate {
+  tmdbId     Int     @id
+  department String
+  popularity Float   @default(0)
+  profilePath String?
+  knownFor   Json
+  selected   Boolean @default(false)
+}
+
+model Person {
+  tmdbId       Int      @id
+  name         String
+  department   String
+  profilePath  String?
+  birthday     String?
+  deathday     String?
+  placeOfBirth String?
+  nationality  String?
+  gender       Int      @default(0)
+  popularity   Float    @default(0)
+  creditCount  Int      @default(0)
+  avgRating    Float    @default(0)
+  genreMix     Json
+  knownFor     Json
+  hydrated     Boolean  @default(false)
+  updatedAt    DateTime @updatedAt
+
+  @@index([department, popularity])
+  @@index([name])
+  @@index([nationality])
+  @@index([gender])
+}
+
+model SeedState {
+  id             String   @id @default("default")
+  phase          String   @default("init")
+  movieListIndex Int      @default(0)
+  moviePage      Int      @default(1)
+  popularPage    Int      @default(0)
+  actorsDone     Int      @default(0)
+  directorsDone  Int      @default(0)
+  actorTarget    Int      @default(2000)
+  directorTarget Int      @default(300)
+  status         String   @default("idle")
+  message        String   @default("")
+  updatedAt      DateTime @updatedAt
+}
+
+model SaveSlot {
+  id         String   @id @default(cuid())
+  slot       Int      @unique
+  name       String
+  agencyName String
+  era        String
+  year       Int
+  week       Int
+  state      Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

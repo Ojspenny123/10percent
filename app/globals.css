@@ -1,0 +1,44 @@
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+@theme inline {
+  --color-paper: #f6f1ea;
+  --color-ink: #241c18;
+  --color-muted: #5c534e;
+  --color-card: #ffffff;
+  --color-line: #e4dbd1;
+  --color-blush: #fdece7;
+  --color-coral: #c4533a;
+  --color-coral-soft: #e07a5f;
+  --color-coral-dark: #9a3e2a;
+  --color-teal: #1f7a72;
+  --color-teal-soft: #e7f4f2;
+  --color-teal-dark: #145751;
+  --color-gold: #8a5e12;
+  --color-gold-soft: #f8efd9;
+  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), ui-serif, Georgia, serif;
+  --shadow-card: 0 1px 2px rgba(36, 28, 24, 0.05), 0 10px 28px rgba(36, 28, 24, 0.06);
+  --radius-card: 1.25rem;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+::selection {
+  background: #f3d2c8;
+  color: #241c18;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}
