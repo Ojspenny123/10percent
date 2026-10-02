@@ -72,14 +72,34 @@ model SeedState {
 }
 
 model SaveSlot {
-  id         String   @id @default(cuid())
-  slot       Int      @unique
-  name       String
-  agencyName String
-  era        String
-  year       Int
-  week       Int
-  state      Json
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String     @id @default(cuid())
+  slot        Int        @unique
+  name        String
+  agencyName  String
+  era         String
+  year        Int
+  week        Int
+  cash        Int        @default(0)
+  roster      Int        @default(0)
+  saveVersion Int        @default(0)
+  savedAt     DateTime   @default(now())
+  /// Legacy full snapshot. New games leave this empty and store deltas in SaveChunk.
+  state       Json
+  /// Scalar game fields that change most turns: date, cash, rng, agency, ledger.
+  head        Json?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  chunks      SaveChunk[]
+}
+
+model SaveChunk {
+  slotId      String
+  kind        String
+  entityId    String
+  payload     Json
+  saveVersion Int
+  slot        SaveSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@id([slotId, kind, entityId])
+  @@index([slotId])
 }

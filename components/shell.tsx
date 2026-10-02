@@ -1,12 +1,15 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { advanceAction } from "@/lib/actions";
 import { formatDate, money } from "@/lib/format";
 import type { GameState } from "@/engine/types";
 import { buttonClass } from "@/components/ui";
+import { SaveStatus } from "@/components/save-status";
 
 const NAV = [
   ["Play", [
     ["/dashboard", "Dashboard"],
+    ["/game", "Game"],
     ["/roster", "Roster"],
     ["/talent", "Talent"],
     ["/offers", "Offers"],
@@ -25,7 +28,7 @@ const NAV = [
   ]],
 ] as const;
 
-export function Shell({ state, children }: { state: GameState; children: React.ReactNode }) {
+export function Shell({ state, savedAt, version, children }: { state: GameState; savedAt: string; version: number; children: React.ReactNode }) {
   const unread = state.inbox.filter((item) => !item.read && !item.resolved).length;
   return (
     <div className="min-h-screen md:grid md:grid-cols-[240px_minmax(0,1fr)]">
@@ -67,7 +70,12 @@ export function Shell({ state, children }: { state: GameState; children: React.R
           ))}
         </nav>
       </aside>
-      <div className="min-w-0 px-4 py-6 sm:px-8">{children}</div>
+      <div className="min-w-0 px-4 py-6 sm:px-8">
+        <Suspense fallback={<p className="mb-4 text-sm text-muted">Saved</p>}>
+          <SaveStatus savedAt={savedAt} version={version} />
+        </Suspense>
+        {children}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { createGameAction, loadSlotAction } from "@/lib/actions";
 import { buttonClass, FlashBanner } from "@/components/ui";
-import { formatDate } from "@/lib/format";
+import { formatDate, money } from "@/lib/format";
 import { listSlots } from "@/lib/game";
+import { savedLabel } from "@/lib/save-diff";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const params = await searchParams;
   const slots = await listSlots();
   const bySlot = new Map(slots.map((slot) => [slot.slot, slot]));
+  const latest = [...slots].sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())[0];
+  const now = Date.now();
   return (
     <main className="mx-auto max-w-5xl px-4 py-12">
       <p className="text-sm font-medium uppercase tracking-wide text-coral-dark">A talent agency</p>
@@ -16,6 +19,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <p className="mt-4 max-w-xl text-lg text-muted">
         Sign real actors. Book them into films and series that do not exist yet. Take ten percent, and try not to lose them.
       </p>
+      {latest ? (
+        <form action={loadSlotAction} className="mt-6 rounded-card border border-teal bg-teal-soft p-5">
+          <input type="hidden" name="id" value={latest.id} />
+          <p className="text-sm text-muted">Most recent save · slot {latest.slot}</p>
+          <p className="font-serif text-2xl">{latest.agencyName}</p>
+          <p className="text-sm text-muted">
+            {formatDate({ year: latest.year, week: latest.week })} · {money(latest.cash)} · {latest.roster} on the roster · {savedLabel(latest.savedAt, now)}
+          </p>
+          <button className={`${buttonClass()} mt-3`}>Continue</button>
+        </form>
+      ) : null}
       <FlashBanner error={params.error} notice={params.notice} />
       <div className="mt-10 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <form action={createGameAction} className="rounded-card border border-line bg-white p-6 shadow-card">
@@ -63,7 +77,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 <div>
                   <p className="font-medium">{saved ? saved.agencyName : `Slot ${slot}`}</p>
                   <p className="text-sm text-muted">
-                    {saved ? `${saved.era} · ${formatDate({ year: saved.year, week: saved.week })}` : "Empty"}
+                    {saved ? `${saved.era} · ${formatDate({ year: saved.year, week: saved.week })} · ${money(saved.cash)} · ${saved.roster} on the roster · ${savedLabel(saved.savedAt, now)}` : "Empty"}
                   </p>
                 </div>
                 {saved ? (

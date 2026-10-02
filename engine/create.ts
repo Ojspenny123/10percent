@@ -86,6 +86,7 @@ export function createGame(input: { agencyName: string; era: Era; seed: number; 
     body: "Sign a client from Talent, then take or counter the offers that follow. One project at a time during prep and shooting.",
     href: "/talent",
     read: false,
+    resolved: false,
   });
   return state;
 }

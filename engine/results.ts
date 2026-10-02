@@ -227,6 +227,7 @@ export function applyWrapVerdict(state: GameState, project: Project, phase: "wra
       body: `${starsLabel(stars)} · ${text}`,
       href: `/actors/${client.personId}?tab=verdicts`,
       read: false,
+      resolved: false,
       refId: project.id,
     });
     state.lastTurn.push(`${client.name} wrapped ${project.title}: ${starsLabel(stars)}.`);
@@ -265,6 +266,7 @@ export function applyReleaseVerdict(state: GameState, project: Project): void {
       body: text,
       href: `/actors/${client.personId}?tab=verdicts`,
       read: false,
+      resolved: false,
       refId: project.id,
     });
   }

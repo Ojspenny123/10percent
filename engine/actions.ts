@@ -96,6 +96,7 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
       body: fit.warning ?? "They refused the job.",
       href: `/actors/${client.personId}`,
       read: false,
+      resolved: false,
     });
     return { state, ok: false, message: `${client.name} refused ${project.title}. Loyalty slipped.` };
   }
@@ -129,6 +130,7 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
         body: `${client.name} is now booked. ${clash.message}`,
         href: "/offers",
         read: false,
+        resolved: false,
       });
     }
   }
@@ -178,6 +180,7 @@ export function counterOffer(
       body: `The counter on ${project.title} for ${client.name} cleared their walk-away. They will remember.`,
       href: "/offers",
       read: false,
+      resolved: false,
     });
     return { state, ok: false, message: `${offer.studio} killed the offer. The counter was past their walk-away.` };
   }
@@ -274,6 +277,7 @@ export function signClient(
     body: `${terms.commission}% for ${terms.years} year${terms.years === 1 ? "" : "s"}${terms.exclusive ? ", exclusive" : ""}.`,
     href: `/actors/${client.personId}`,
     read: false,
+    resolved: false,
   });
   return { state, ok: true, message: `${client.name} is now a client at ${terms.commission}%.`, href: `/actors/${client.personId}` };
 }
@@ -763,6 +767,7 @@ export function applyEventChoice(state: GameState, eventId: string, choiceId: st
     title: event.title,
     body: `You chose: ${choice.label}.`,
     read: false,
+    resolved: false,
   });
   return { state, ok: true, message: `${event.title}: ${choice.label}.` };
 }
@@ -780,6 +785,7 @@ function loseClient(state: GameState, client: Client, why: string): void {
     body: why,
     href: "/rivals",
     read: false,
+    resolved: false,
   });
 }
 
