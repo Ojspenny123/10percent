@@ -27,6 +27,17 @@ function openRecord(state: GameState, id = "slot-a"): SlotRecord {
 }
 
 describe("save deltas", () => {
+  it("keeps both inbox notes when a legacy save reused an id", () => {
+    const state = fresh();
+    const extra = { ...state.inbox[0]!, id: state.inbox[0]!.id, title: "Second note", body: "Kept" };
+    state.inbox.push(extra);
+    const record = openRecord(state);
+    const loaded = joinState(structuredClone(record.head), structuredClone(record.chunks));
+    expect(loaded.inbox.filter((item) => item.id === extra.id)).toHaveLength(2);
+    expect(loaded.inbox.some((item) => item.title === "Second note")).toBe(true);
+    expect(record.chunks.filter((chunk) => chunk.kind === "inbox")).toHaveLength(state.inbox.length);
+  });
+
   it("reloads a split save as the same state", () => {
     const state = fresh();
     const record = openRecord(state);

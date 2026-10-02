@@ -89,7 +89,7 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
     client.overrides += 1;
     fillNpcLater(project);
     state.inbox.unshift({
-      id: `in_${state.seq++}`,
+      id: `in_${++state.seq}`,
       date: { ...state.date },
       kind: "offer",
       title: `${client.name} passed on ${project.title}`,
@@ -123,7 +123,7 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
       closeInbox(state, other.id);
       otherProject.openRole = null;
       state.inbox.unshift({
-        id: `in_${state.seq++}`,
+        id: `in_${++state.seq}`,
         date: { ...state.date },
         kind: "offer",
         title: `Passed on ${otherProject.title}`,
@@ -173,7 +173,7 @@ export function counterOffer(
     client.studioHeat[offer.studio] = (client.studioHeat[offer.studio] ?? 0) + 2;
     project.openRole = null;
     state.inbox.unshift({
-      id: `in_${state.seq++}`,
+      id: `in_${++state.seq}`,
       date: { ...state.date },
       kind: "offer",
       title: `${offer.studio} walked away`,
@@ -270,7 +270,7 @@ export function signClient(
   }
   bumpRep(state, poach ? 2 : 1);
   state.inbox.unshift({
-    id: `in_${state.seq++}`,
+    id: `in_${++state.seq}`,
     date: { ...state.date },
     kind: "system",
     title: `${client.name} signed`,
@@ -626,7 +626,7 @@ export function submitFestival(input: GameState, projectId: string, festivalId: 
   book(state, -cost, `Festival submission: ${project.title}`);
   project.festival = festivalName;
   state.festivals.push({
-    id: `fest_${state.seq++}`,
+    id: `fest_${++state.seq}`,
     projectId,
     festival: festivalName,
     festivalId,
@@ -706,7 +706,7 @@ export function applyEventChoice(state: GameState, eventId: string, choiceId: st
     if (client) client.mood = "Unhappy";
   } else if (client && id === "grant_leave") {
     state.holds.push({
-      id: `hold_${state.seq++}`,
+      id: `hold_${++state.seq}`,
       personId: client.personId,
       start: { ...state.date },
       end: addWeeks(state.date, 6),
@@ -761,7 +761,7 @@ export function applyEventChoice(state: GameState, eventId: string, choiceId: st
     if (client) client.mood = "Content";
   }
   state.inbox.unshift({
-    id: `in_${state.seq++}`,
+    id: `in_${++state.seq}`,
     date: { ...state.date },
     kind: "event",
     title: event.title,
@@ -778,7 +778,7 @@ function loseClient(state: GameState, client: Client, why: string): void {
   client.contract = null;
   bumpRep(state, -4);
   state.inbox.unshift({
-    id: `in_${state.seq++}`,
+    id: `in_${++state.seq}`,
     date: { ...state.date },
     kind: "system",
     title: `${client.name} left the agency`,

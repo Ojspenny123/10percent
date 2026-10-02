@@ -197,7 +197,7 @@ function resolveReleases(state: GameState, catalog: Catalog): void {
     applyReleaseVerdict(state, project);
     const gross = project.totalGross ?? 0;
     state.news.unshift({
-      id: `news_${state.seq++}`,
+      id: `news_${++state.seq}`,
       date: { ...state.date },
       headline: headline(state.rng, "release", project.title),
       body: `${project.title} ${project.profitLabel ?? "opened"} with ${Math.round(gross).toLocaleString("en-US")} worldwide. Critics: ${project.criticScore}.`,
@@ -265,7 +265,7 @@ function resolveSeries(state: GameState): void {
     project.phase = outcome === "cancelled" ? "ended" : "hiatus";
     const avg = season.viewership.reduce((s, n) => s + n, 0) / Math.max(1, season.viewership.length);
     state.news.unshift({
-      id: `news_${state.seq++}`,
+      id: `news_${++state.seq}`,
       date: { ...state.date },
       headline: `${project.title} is ${outcome === "renewed" ? "renewed" : outcome === "renewed_short" ? "renewed, shorter" : outcome === "finale" ? "ending" : "cancelled"}`,
       body: `Season ${season.number} averaged ${Math.round(avg / 1000) / 10}M viewers. Critics ${season.criticScore ?? "—"}.`,
@@ -426,7 +426,7 @@ function handOut(state: GameState, ceremonyId: string, ceremony: string, categor
   let winnerIndex = 0;
   for (let i = 1; i < jittered.length; i++) if ((jittered[i] ?? 0) > (jittered[winnerIndex] ?? 0)) winnerIndex = i;
   const record: AwardRecord = {
-    id: `aw_${state.seq++}`,
+    id: `aw_${++state.seq}`,
     ceremonyId,
     ceremony,
     year: state.date.year,
@@ -451,7 +451,7 @@ function handOut(state: GameState, ceremonyId: string, ceremony: string, categor
     inbox(state, "award", `${ceremony}: ${category}`, `${winner.name} wins. ${record.nominees.map((n) => n.name).join(", ")} were nominated.`, "/awards");
   }
   state.news.unshift({
-    id: `news_${state.seq++}`,
+    id: `news_${++state.seq}`,
     date: { ...state.date },
     headline: `${ceremony}: ${winner.name} wins ${category}`,
     body: record.nominees.map((n) => n.title).join(" · "),
@@ -837,7 +837,7 @@ function writeNews(state: GameState): void {
     const genre = pick(state.rng, GENRES);
     const trend = state.genreTrends[genre] ?? 1;
     state.news.unshift({
-      id: `news_${state.seq++}`,
+      id: `news_${++state.seq}`,
       date: { ...state.date },
       headline: trend >= 1.05 ? `${genre} is the easy yes this year` : trend <= 0.9 ? `Buyers are cooling on ${genre.toLowerCase()}` : `A quiet week on the ${genre.toLowerCase()} desks`,
       body: `The ${genre.toLowerCase()} trend is ${trend.toFixed(2)}. Studios are pricing offers accordingly.`,
@@ -853,7 +853,7 @@ function trim(state: GameState): void {
 }
 
 function inbox(state: GameState, kind: GameState["inbox"][number]["kind"], title: string, body: string, href?: string, refId?: string): void {
-  state.inbox.unshift({ id: `in_${state.seq++}`, date: { ...state.date }, kind, title, body, href, read: false, resolved: false, refId });
+  state.inbox.unshift({ id: `in_${++state.seq}`, date: { ...state.date }, kind, title, body, href, read: false, resolved: false, refId });
 }
 
 function playerIds(state: GameState): number[] {

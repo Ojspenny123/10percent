@@ -91,8 +91,12 @@ export function splitState(state: GameState): { head: SaveHead; chunks: Chunk[] 
   for (const kind of LIST_KEYS) {
     const list = state[kind] as unknown[];
     order[kind] = [];
+    const seen = new Map<string, number>();
     for (const item of list) {
-      const id = entityId(kind, item);
+      const raw = entityId(kind, item);
+      const count = seen.get(raw) ?? 0;
+      seen.set(raw, count + 1);
+      const id = count === 0 ? raw : `${raw}#${count}`;
       order[kind].push(id);
       chunks.push({ kind, entityId: id, payload: item });
     }

@@ -73,13 +73,13 @@ export function createGame(input: { agencyName: string; era: Era; seed: number; 
     scoreFilm(state, film);
   }
   state.news.unshift({
-    id: `news_${state.seq++}`,
+    id: `news_${++state.seq}`,
     date: { ...state.date },
     headline: `${name} opens its doors`,
     body: `A new shop in a ${input.era === "today" ? "2026" : input.era} market. Ten percent, if you can get it.`,
   });
   state.inbox.unshift({
-    id: `in_${state.seq++}`,
+    id: `in_${++state.seq}`,
     date: { ...state.date },
     kind: "system",
     title: `Welcome to ${name}`,

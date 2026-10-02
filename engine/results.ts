@@ -199,7 +199,7 @@ export function applyWrapVerdict(state: GameState, project: Project, phase: "wra
     if (member.billing > 2 && client.traits.ambition > 70) notes.push("I wanted a better spot on the poster.");
     const text = verdictCopy(rng, dominantTrait(client.traits), stars, notes);
     client.verdicts.unshift({
-      id: `ver_${state.seq++}`,
+      id: `ver_${++state.seq}`,
       projectId: project.id,
       projectTitle: project.title,
       when: { ...state.date },
@@ -220,7 +220,7 @@ export function applyWrapVerdict(state: GameState, project: Project, phase: "wra
       if (!client.revealedHints.includes(hint)) client.revealedHints.push(hint);
     }
     state.inbox.unshift({
-      id: `in_${state.seq++}`,
+      id: `in_${++state.seq}`,
       date: { ...state.date },
       kind: "verdict",
       title: `${client.name} on ${project.title}`,
@@ -247,7 +247,7 @@ export function applyReleaseVerdict(state: GameState, project: Project): void {
     if (project.profitLabel === "blockbuster" && stars < 4 && client.traits.prestigeVsMoney < 40) stars = Math.min(5, stars + 1);
     const text = releaseVerdictCopy(rng, stars, project.profitLabel, project.criticScore);
     client.verdicts.unshift({
-      id: `ver_${state.seq++}`,
+      id: `ver_${++state.seq}`,
       projectId: project.id,
       projectTitle: project.title,
       when: { ...state.date },
@@ -259,7 +259,7 @@ export function applyReleaseVerdict(state: GameState, project: Project): void {
     client.mood = moodFromStars(stars);
     client.loyalty = clamp(client.loyalty + (stars - 3) * 3, 1, 99);
     state.inbox.unshift({
-      id: `in_${state.seq++}`,
+      id: `in_${++state.seq}`,
       date: { ...state.date },
       kind: "verdict",
       title: `${client.name} after ${project.title} opened`,
