@@ -15,7 +15,7 @@ const SPLIT = [
   ["bonus", "Bonuses"],
   ["series", "Series"],
   ["pilot", "Pilots"],
-  ["production", "Own-production profit"],
+  ["production", "Own productions"],
 ] as const;
 
 export default async function FinancePage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) {
