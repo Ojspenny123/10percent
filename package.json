@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "prisma generate && next build",
+    "build": "npm run prisma:generate && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -12,7 +12,8 @@
     "seed": "tsx scripts/seed.ts",
     "simulate": "tsx scripts/simulate.ts",
     "db:push": "prisma db push",
-    "postinstall": "prisma generate"
+    "prisma:generate": "sh -c 'DATABASE_URL=${DATABASE_URL:-postgresql://placeholder:placeholder@127.0.0.1:5432/placeholder} prisma generate'",
+    "postinstall": "npm run prisma:generate"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@netlify/plugin-nextjs": "^5.16.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
