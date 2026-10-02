@@ -13,8 +13,8 @@ export function PageHeader({ title, lede, children }: { title: string; lede?: st
   );
 }
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <section className={`rounded-card border border-line bg-card p-5 shadow-card ${className}`}>{children}</section>;
+export function Card({ children, className = "", id }: { children: ReactNode; className?: string; id?: string }) {
+  return <section id={id} className={`rounded-card border border-line bg-card p-5 shadow-card ${className}`}>{children}</section>;
 }
 
 export function Explain({ tip, children }: { tip: string; children: ReactNode }) {

@@ -1,4 +1,4 @@
-import { applyEventChoice, book, bumpRep, tierBias } from "./actions";
+import { applyEventChoice, book, bumpRep, closeApproachInbox, closeInbox, pushApproach, tierBias } from "./actions";
 import { BRANDS, CEREMONIES, GENRES, STAFF_INFO, STREAMERS } from "./constants";
 import { headline } from "./copy";
 import {
@@ -312,7 +312,7 @@ function resolveSeries(state: GameState): void {
         if (!client) continue;
         if (client.traits.greed > 68 && (season.criticScore ?? 0) > 60) {
           member.fee = Math.round(member.fee * 1.25);
-          inbox(state, "offer", `${client.name} exercised a raise`, `Next season of ${project.title} pays $${member.fee.toLocaleString("en-US")}. Options kept them on the show.`);
+          inbox(state, "offer", `${client.name} exercised a raise`, `Next season of ${project.title} pays $${member.fee.toLocaleString("en-US")}. Options kept them on the show.`, `/projects/${project.id}`);
         }
       }
     } else {
@@ -327,26 +327,30 @@ function expirePaperwork(state: GameState): void {
     if (offer.status !== "pending") continue;
     if (cmpDate(offer.expires, state.date) > 0) continue;
     offer.status = "expired";
+    closeInbox(state, offer.id);
     const project = state.projects.find((p) => p.id === offer.projectId);
     if (project?.openRole?.forPersonId === offer.personId) project.openRole = null;
     const client = state.clients.find((c) => c.personId === offer.personId);
-    inbox(state, "offer", `Offer expired: ${project?.title ?? "a project"}`, `${client?.name ?? "Your client"} did not answer ${offer.studio} in time.`);
+    inbox(state, "offer", `Offer expired: ${project?.title ?? "a project"}`, `${client?.name ?? "Your client"} did not answer ${offer.studio} in time.`, `/offers?offer=${offer.id}&status=expired`);
   }
   for (const approach of state.approaches) {
     if (approach.status !== "pending") continue;
-    if (cmpDate(approach.expires, state.date) <= 0) approach.status = "expired";
+    if (cmpDate(approach.expires, state.date) >= 0) continue;
+    approach.status = "expired";
+    closeApproachInbox(state, approach);
+    inbox(state, "approach", `${approach.name} let the meeting lapse`, `They stopped waiting on ${formatDate(approach.expires)}.`, `/meetings/${approach.id}`);
   }
   for (const client of [...state.clients]) {
     if (client.agency !== "player" || !client.contract) continue;
     const end = addWeeks(client.contract.start, client.contract.termYears * 52);
     const weeks = end.year * 52 + (end.week - 1) - (state.date.year * 52 + (state.date.week - 1));
-    if (weeks === 8) inbox(state, "system", `${client.name}'s contract is close`, "Eight weeks left. Renew them from Contracts before they walk.");
+    if (weeks === 8) inbox(state, "system", `${client.name}'s contract is close`, "Eight weeks left. Renew them from Contracts before they walk.", `/actors/${client.personId}?tab=contract`);
     if (weeks <= 0) {
       client.agency = "unsigned";
       client.rivalId = null;
       client.contract = null;
       bumpRep(state, -1);
-      inbox(state, "system", `${client.name}'s contract ended`, "They are unsigned again. Their file, including verdicts, stays in the office.");
+      inbox(state, "system", `${client.name}'s contract ended`, "They are unsigned again. Their file, including verdicts, stays in the office.", `/actors/${client.personId}`);
     }
   }
   for (const project of state.projects) {
@@ -382,10 +386,10 @@ function resolveFestivals(state: GameState): void {
         client.stats.buzz = clamp(client.stats.buzz + 12, 1, 99);
         if (fest.prize) client.stats.talent = clamp(client.stats.talent + 1, 1, 99);
       }
-      inbox(state, "award", `${project.title} plays ${fest.festival}`, fest.prize ?? "Accepted. Buzz is up with the cast.");
+      inbox(state, "award", `${project.title} plays ${fest.festival}`, fest.prize ?? "Accepted. Buzz is up with the cast.", "/awards");
     } else {
       fest.status = "declined";
-      inbox(state, "news", `${fest.festival} passed on ${project.title}`, "The programmers went another way.");
+      inbox(state, "news", `${fest.festival} passed on ${project.title}`, "The programmers went another way.", "/news");
     }
   }
 }
@@ -444,7 +448,7 @@ function handOut(state: GameState, ceremonyId: string, ceremony: string, categor
   }
   const playerNom = record.nominees.some((n) => n.personId && state.clients.some((c) => c.personId === n.personId && c.agency === "player"));
   if (playerNom) {
-    inbox(state, "award", `${ceremony}: ${category}`, `${winner.name} wins. ${record.nominees.map((n) => n.name).join(", ")} were nominated.`);
+    inbox(state, "award", `${ceremony}: ${category}`, `${winner.name} wins. ${record.nominees.map((n) => n.name).join(", ")} were nominated.`, "/awards");
   }
   state.news.unshift({
     id: `news_${state.seq++}`,
@@ -653,7 +657,7 @@ function pushOffer(state: GameState, project: Project, client: Client, role: Rol
     created: { ...state.date },
   };
   state.offers.unshift(offer);
-  inbox(state, "offer", `Offer: ${client.name} in ${project.title}`, `${role}, $${fee.toLocaleString("en-US")}, ${project.genres[0]}. Expires ${formatDate(expires)}.`, "/offers");
+  inbox(state, "offer", `Offer: ${client.name} in ${project.title}`, `${role}, $${fee.toLocaleString("en-US")}, ${project.genres[0]}. Expires ${formatDate(expires)}.`, `/offers?offer=${offer.id}`, offer.id);
 }
 
 function generateInbound(state: GameState, catalog: Catalog): void {
@@ -665,27 +669,7 @@ function generateInbound(state: GameState, catalog: Catalog): void {
   const pool = livingActors(catalog, state.date).filter((a) => !taken.has(a.id) && isEligible(a, state.era, state.date.year));
   if (pool.length === 0) return;
   const person = pick(state.rng, pool.slice(0, 80).length ? pool.slice(0, Math.min(pool.length, 120)) : pool);
-  const client = clientFromCatalog(person, "player", state.date, null);
-  const desired = Math.max(5, Math.min(15, 11 - Math.round(state.agency.reputation / 25) + (client.traits.greed > 70 ? 2 : 0)));
-  state.approaches.unshift({
-    id: nextId(state, "app"),
-    personId: person.id,
-    name: person.name,
-    profilePath: person.profilePath,
-    fame: client.fame,
-    pitch: pitchFor(client),
-    desiredCommission: desired,
-    expires: addWeeks(state.date, int(state.rng, 3, 6)),
-    status: "pending",
-  });
-  inbox(state, "approach", `${person.name} wants a meeting`, `They're asking about ${desired}% and a two-year exclusive.`, "/dashboard");
-}
-
-function pitchFor(client: Client): string {
-  if (client.fame === "Unknown" || client.fame === "Working") return "A working actor who thinks a smaller shop will actually pick up the phone.";
-  if (client.traits.prestigeVsMoney > 65) return "They want fewer meetings and better scripts.";
-  if (client.traits.greed > 65) return "They heard you close quotes. They want that, in writing.";
-  return "Looking for representation that will say no on their behalf.";
+  pushApproach(state, catalog, person.id, { weeks: int(state.rng, 3, 6) });
 }
 
 function generateBrands(state: GameState): void {
@@ -704,7 +688,7 @@ function generateBrands(state: GameState): void {
     end: addWeeks(state.date, 12),
     status: "offered",
   });
-  inbox(state, "money", `${client.name}: ${state.brandDeals[0]?.brand} wants a campaign`, `Fee $${fee.toLocaleString("en-US")}. Your cut is the commission. It does not block their schedule.`, "/agency");
+  inbox(state, "money", `${client.name}: ${state.brandDeals[0]?.brand} wants a campaign`, `Fee $${fee.toLocaleString("en-US")}. Your cut is the commission. It does not block their schedule.`, `/agency#brand-${state.brandDeals[0]?.id}`, state.brandDeals[0]?.id);
 }
 
 function rivalAct(state: GameState, catalog: Catalog): void {
@@ -742,7 +726,7 @@ function rivalAct(state: GameState, catalog: Catalog): void {
         { id: "let_go", label: "Let them walk", hint: "They leave. Reputation dips." },
       ],
     });
-    inbox(state, "event", state.events[0]!.title, state.events[0]!.body, "/dashboard");
+    inbox(state, "event", state.events[0]!.title, state.events[0]!.body, `/dashboard#event-${state.events[0]!.id}`, state.events[0]!.id);
   }
 }
 
@@ -764,7 +748,7 @@ function maybeEvent(state: GameState, options: AdvanceOptions): boolean {
   const event = buildEvent(state, pick(state.rng, players));
   if (!event) return false;
   state.events.unshift(event);
-  inbox(state, "event", event.title, event.body, "/dashboard");
+  inbox(state, "event", event.title, event.body, `/dashboard#event-${event.id}`, event.id);
   state.lastTurn.push(event.title);
   if (options.autoResolveEvents) {
     applyEventChoice(state, event.id, event.choices[0]!.id);
@@ -868,8 +852,8 @@ function trim(state: GameState): void {
   if (state.ceremoniesRun.length > 80) state.ceremoniesRun.splice(0, state.ceremoniesRun.length - 60);
 }
 
-function inbox(state: GameState, kind: GameState["inbox"][number]["kind"], title: string, body: string, href?: string): void {
-  state.inbox.unshift({ id: `in_${state.seq++}`, date: { ...state.date }, kind, title, body, href, read: false });
+function inbox(state: GameState, kind: GameState["inbox"][number]["kind"], title: string, body: string, href?: string, refId?: string): void {
+  state.inbox.unshift({ id: `in_${state.seq++}`, date: { ...state.date }, kind, title, body, href, read: false, resolved: false, refId });
 }
 
 function playerIds(state: GameState): number[] {

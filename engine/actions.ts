@@ -1,8 +1,8 @@
 import { STAFF_INFO } from "./constants";
-import { castFromClient } from "./generate";
-import { agencyTier, clamp, clientFromCatalog, expectedFee, genreFit } from "./people";
-import { addWeeks, cmpDate, scheduleConflict, shootEnd, tryShift } from "./schedule";
-import type { ActionResult, BudgetTier, Catalog, Client, GameState, Offer, Project, StaffRole } from "./types";
+import { castFromClient, nextId } from "./generate";
+import { agencyTier, clamp, clientFromCatalog, expectedFee, genreFit, rosterCap } from "./people";
+import { addWeeks, cmpDate, formatDate, scheduleConflict, shootEnd, tryShift } from "./schedule";
+import type { ActionResult, Approach, ApproachAsk, BudgetTier, Catalog, Client, GameState, HiddenTraits, Offer, Project, StaffRole } from "./types";
 
 function clone(state: GameState): GameState {
   return structuredClone(state);
@@ -83,6 +83,7 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
   if (warning && !confirm) return { state: input, ok: false, message: warning, warning };
   if (fit.score < 38) {
     offer.status = "actor_refused";
+    closeInbox(state, offer.id);
     client.loyalty = clamp(client.loyalty - 6, 1, 99);
     client.mood = "Unhappy";
     client.overrides += 1;
@@ -110,6 +111,7 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
   project.playerInvolved = true;
   if (offer.perk) project.logline = `${project.logline} Perk: ${offer.perk}.`;
   offer.status = "accepted";
+  closeInbox(state, offer.id);
   for (const other of state.offers) {
     if (other.status !== "pending" || other.personId !== client.personId || other.id === offer.id) continue;
     const otherProject = state.projects.find((p) => p.id === other.projectId);
@@ -117,6 +119,7 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
     const clash = scheduleConflict(state, client.personId, otherProject.prepStart, shootEnd(otherProject), otherProject.id);
     if (clash) {
       other.status = "expired";
+      closeInbox(state, other.id);
       otherProject.openRole = null;
       state.inbox.unshift({
         id: `in_${state.seq++}`,
@@ -138,6 +141,7 @@ export function declineOffer(input: GameState, offerId: string): ActionResult {
   const offer = state.offers.find((o) => o.id === offerId);
   if (!offer || offer.status !== "pending") return { state, ok: false, message: "That offer is no longer open." };
   offer.status = "declined";
+  closeInbox(state, offer.id);
   const project = state.projects.find((p) => p.id === offer.projectId);
   if (project) project.openRole = null;
   const client = state.clients.find((c) => c.personId === offer.personId);
@@ -163,6 +167,7 @@ export function counterOffer(
   const perk = counter.perk ?? null;
   if (fee > offer.walkAwayFee || backend > offer.walkAwayBackend + 0.1 || billing < offer.minBilling) {
     offer.status = "killed";
+    closeInbox(state, offer.id);
     client.studioHeat[offer.studio] = (client.studioHeat[offer.studio] ?? 0) + 2;
     project.openRole = null;
     state.inbox.unshift({
@@ -217,6 +222,15 @@ export function signClient(
   }
   const person = catalog.actors.find((a) => a.id === personId);
   if (!person && !existing) return { state, ok: false, message: "That actor is not in the cached talent pool." };
+  const roster = state.clients.filter((row) => row.agency === "player" && row.contract).length;
+  const cap = rosterCap(state.agency.tier);
+  if (roster >= cap) {
+    return {
+      state: input,
+      ok: false,
+      message: `The roster is full (${roster}/${cap} for a ${state.agency.tier} shop). Release someone before signing another client.`,
+    };
+  }
   const poach = existing?.agency === "rival";
   const client = existing ?? clientFromCatalog(person!, "player", state.date, null);
   const ceiling = maxCommission(client, state.agency.reputation, Boolean(poach));
@@ -246,7 +260,11 @@ export function signClient(
   client.loyalty = clamp(client.loyalty + (poach ? -4 : 6), 1, 99);
   if (!existing) state.clients.push(client);
   const approach = state.approaches.find((a) => a.personId === personId && a.status === "pending");
-  if (approach) approach.status = "signed";
+  if (approach) {
+    approach.status = "signed";
+    approach.lastReply = { outcome: "accepted", reason: `Signed at ${terms.commission}%.` };
+    closeApproachInbox(state, approach);
+  }
   bumpRep(state, poach ? 2 : 1);
   state.inbox.unshift({
     id: `in_${state.seq++}`,
@@ -257,7 +275,7 @@ export function signClient(
     href: `/actors/${client.personId}`,
     read: false,
   });
-  return { state, ok: true, message: `${client.name} is now a client at ${terms.commission}%.` };
+  return { state, ok: true, message: `${client.name} is now a client at ${terms.commission}%.`, href: `/actors/${client.personId}` };
 }
 
 export function renewContract(input: GameState, personId: number, terms: { commission: number; years: number; exclusive: boolean; exitClause: boolean }): ActionResult {
@@ -288,25 +306,281 @@ export function releaseClient(input: GameState, personId: number): ActionResult 
   return { state, ok: true, message: `${client.name} is no longer represented here. The file stays, including their verdicts.` };
 }
 
-export function respondApproach(input: GameState, catalog: Catalog, approachId: string, accept: boolean, commission?: number): ActionResult {
-  const state = clone(input);
-  const approach = state.approaches.find((a) => a.id === approachId);
-  if (!approach || approach.status !== "pending") return { state, ok: false, message: "That approach has expired." };
-  if (!accept) {
-    approach.status = "passed";
-    return { state, ok: true, message: `Passed on ${approach.name}.` };
+export function closeInbox(state: GameState, refId: string): void {
+  for (const item of state.inbox) {
+    if (item.refId === refId && !item.resolved) item.resolved = true;
   }
-  const rate = commission ?? approach.desiredCommission;
-  const signed = signClient(state, catalog, approach.personId, {
-    commission: rate,
-    years: 2,
-    exclusive: true,
-    exitClause: true,
+}
+
+export function closeApproachInbox(state: GameState, approach: Approach): void {
+  closeInbox(state, approach.id);
+  for (const item of state.inbox) {
+    if (item.resolved || item.kind !== "approach") continue;
+    if (item.title.startsWith(`${approach.name} wants`)) item.resolved = true;
+  }
+}
+
+export function walkAwayCommission(ask: number, traits: Pick<HiddenTraits, "greed" | "loyalty" | "ambition">, reputation: number): number {
+  const room = Math.round((100 - traits.greed) / 25 + traits.loyalty / 30 + reputation / 20 - traits.ambition / 28);
+  return clamp(ask + Math.max(0, room), ask, 20);
+}
+
+export function approachTolerance(traits: Pick<HiddenTraits, "greed" | "loyalty" | "ambition">, reputation: number): number {
+  return 2.2 + (100 - traits.greed) / 35 + traits.loyalty / 40 + reputation / 30 - traits.ambition / 55;
+}
+
+export function counterPain(ask: ApproachAsk, counter: ApproachAsk, greed: number): number {
+  const extra = Math.max(0, counter.commission - ask.commission);
+  let pain = extra * (1.1 + greed / 80);
+  const yearGap = ask.termYears - counter.termYears;
+  if (yearGap > 0) pain += yearGap * 1.4;
+  else if (yearGap < 0) pain += -yearGap * 0.4;
+  if (ask.exclusive && !counter.exclusive) pain += 2.2;
+  if (!ask.exclusive && counter.exclusive) pain += 1;
+  if (ask.exitClause && !counter.exitClause) pain += 1.6;
+  if (!ask.exitClause && counter.exitClause) pain += 0.3;
+  return pain;
+}
+
+export function judgeApproachCounter(
+  ask: ApproachAsk,
+  counter: ApproachAsk,
+  traits: Pick<HiddenTraits, "greed" | "loyalty" | "ambition">,
+  reputation: number,
+  walkAway: number,
+): { outcome: "accepted" | "counter" | "walked"; reason: string; nextAsk: ApproachAsk } {
+  const pain = counterPain(ask, counter, traits.greed);
+  const tolerance = approachTolerance(traits, reputation);
+  if (counter.commission > walkAway || pain > tolerance) {
+    return {
+      outcome: "walked",
+      reason: counter.commission > walkAway
+        ? "That commission is past what they will live with."
+        : "The package asks too much. They left the meeting.",
+      nextAsk: { ...ask },
+    };
+  }
+  if (pain <= tolerance * 0.35) {
+    return {
+      outcome: "accepted",
+      reason: "They will take those terms. The number sits inside what they walked in hoping for.",
+      nextAsk: normalizeAsk(counter),
+    };
+  }
+  const mid = Math.round((ask.commission + counter.commission) / 2);
+  const nextAsk = normalizeAsk({
+    ...ask,
+    commission: Math.min(walkAway, Math.max(ask.commission, mid)),
   });
-  if (!signed.ok) return signed;
-  const done = signed.state.approaches.find((a) => a.id === approachId);
-  if (done && done.status === "pending") done.status = "signed";
-  return signed;
+  return {
+    outcome: "counter",
+    reason: `They will not go to ${counter.commission}%. They will meet you at ${nextAsk.commission}% if the rest of the deal stays as they asked.`,
+    nextAsk,
+  };
+}
+
+export function approachBlocker(state: GameState, approach: Approach): string | null {
+  if (approach.status === "expired" || (approach.status === "pending" && cmpDate(approach.expires, state.date) < 0)) {
+    return `${approach.name} stopped waiting. This approach expired ${formatDate(approach.expires)}.`;
+  }
+  if (approach.status === "walked") return `${approach.name} already walked out of the meeting.`;
+  if (approach.status === "passed") return `You already passed on ${approach.name}.`;
+  if (approach.status === "signed") return `${approach.name} is already signed from this meeting.`;
+  const client = state.clients.find((row) => row.personId === approach.personId);
+  if (client?.agency === "player" && client.contract) return `${approach.name} is already on the roster.`;
+  if (client?.agency === "rival") {
+    const rival = state.rivals.find((row) => row.id === client.rivalId)?.name ?? "a rival";
+    return `${approach.name} already signed with ${rival}.`;
+  }
+  const cap = rosterCap(state.agency.tier);
+  const count = state.clients.filter((row) => row.agency === "player" && row.contract).length;
+  if (count >= cap) return `The roster is full (${count}/${cap} for a ${state.agency.tier} shop). Release someone before you sign ${approach.name}.`;
+  return null;
+}
+
+export function presentApproach(approach: Approach): Approach {
+  const fallback = approach.ask?.commission || approach.desiredCommission || 10;
+  const ask = normalizeAsk(approach.ask?.commission ? approach.ask : { commission: fallback, termYears: 2, exclusive: true, exitClause: true });
+  approach.ask = ask;
+  approach.desiredCommission = ask.commission;
+  approach.opening = approach.opening?.commission ? normalizeAsk(approach.opening) : { ...ask };
+  approach.line = approach.line || approach.pitch || `${approach.name} asked for a meeting.`;
+  approach.pitch = approach.pitch || approach.line;
+  if (!approach.walkAwayCommission) approach.walkAwayCommission = Math.min(20, ask.commission + 2);
+  return approach;
+}
+
+export function pushApproach(state: GameState, catalog: Catalog, personId: number, options?: { commission?: number; weeks?: number }): Approach | null {
+  const person = catalog.actors.find((actor) => actor.id === personId);
+  if (!person) return null;
+  const client = clientFromCatalog(person, "unsigned", state.date, null);
+  const ceiling = maxCommission(client, state.agency.reputation, false);
+  const desired = options?.commission ?? Math.max(5, Math.min(15, 11 - Math.round(state.agency.reputation / 25) + (client.traits.greed > 70 ? 2 : 0)));
+  const commission = clamp(Math.round(desired), 5, ceiling);
+  const ask: ApproachAsk = { commission, termYears: 2, exclusive: true, exitClause: true };
+  const approach: Approach = {
+    id: nextId(state, "app"),
+    personId: person.id,
+    name: person.name,
+    profilePath: person.profilePath,
+    fame: client.fame,
+    pitch: pitchFor(client),
+    line: approachLine(client),
+    opening: { ...ask },
+    ask: { ...ask },
+    desiredCommission: commission,
+    walkAwayCommission: Math.min(ceiling, walkAwayCommission(commission, client.traits, state.agency.reputation)),
+    expires: addWeeks(state.date, options?.weeks ?? 4),
+    status: "pending",
+  };
+  state.approaches.unshift(approach);
+  state.inbox.unshift({
+    id: nextId(state, "in"),
+    date: { ...state.date },
+    kind: "approach",
+    title: `${person.name} wants a meeting`,
+    body: `They are asking about ${commission}% and a two-year exclusive. Open through ${formatDate(approach.expires)}.`,
+    href: `/meetings/${approach.id}`,
+    read: false,
+    resolved: false,
+    refId: approach.id,
+  });
+  return approach;
+}
+
+function pitchFor(client: Client): string {
+  if (client.fame === "Unknown" || client.fame === "Working") return "A working actor who thinks a smaller shop will actually pick up the phone.";
+  if (client.traits.prestigeVsMoney > 65) return "They want fewer meetings and better scripts.";
+  if (client.traits.greed > 65) return "They heard you close quotes. They want that, in writing.";
+  return "Looking for representation that will say no on their behalf.";
+}
+
+export function approachLine(client: Client): string {
+  const first = client.name.split(" ")[0] || client.name;
+  if (client.traits.greed >= 70) return `${first} does not do charity. The number on the table is the number.`;
+  if (client.traits.ambition >= 75) return `${first} is done waiting in other people's waiting rooms.`;
+  if (client.traits.loyalty >= 70) return `${first} wants a shop that picks up the phone and stays.`;
+  if (client.traits.prestigeVsMoney >= 68) return `${first} will take a smaller cut of the fee if the scripts are better.`;
+  return `${first} is here because the last shop stopped returning calls.`;
+}
+
+function normalizeAsk(ask: ApproachAsk): ApproachAsk {
+  return {
+    commission: clamp(Math.round(ask.commission || 10), 5, 20),
+    termYears: clamp(Math.round(ask.termYears || 2), 1, 5),
+    exclusive: Boolean(ask.exclusive),
+    exitClause: Boolean(ask.exitClause),
+  };
+}
+
+function toTerms(ask: ApproachAsk): { commission: number; years: number; exclusive: boolean; exitClause: boolean } {
+  return { commission: ask.commission, years: ask.termYears, exclusive: ask.exclusive, exitClause: ask.exitClause };
+}
+
+function evenTraits(): HiddenTraits {
+  return { ambition: 50, loyalty: 50, greed: 50, prestigeVsMoney: 50, riskAppetite: 50 };
+}
+
+function settleClosedApproach(state: GameState, approach: Approach, reason: string): void {
+  if (approach.status === "pending" && cmpDate(approach.expires, state.date) < 0) approach.status = "expired";
+  const client = state.clients.find((row) => row.personId === approach.personId);
+  if (approach.status === "pending" && client?.agency === "player" && client.contract) approach.status = "signed";
+  if (approach.status === "pending" && client?.agency === "rival") approach.status = "passed";
+  if (approach.status === "pending") approach.status = "passed";
+  approach.lastReply = { outcome: approach.status === "signed" ? "accepted" : "passed", reason };
+  closeApproachInbox(state, approach);
+}
+
+function handToRival(state: GameState, catalog: Catalog, personId: number, ask: ApproachAsk): string | null {
+  const existing = state.clients.find((row) => row.personId === personId);
+  if (existing?.agency === "player" || existing?.agency === "rival") return null;
+  const person = catalog.actors.find((actor) => actor.id === personId);
+  if (!person) return null;
+  const preview = existing ?? clientFromCatalog(person, "unsigned", state.date, null);
+  if (preview.traits.ambition + preview.traits.greed < 130) return null;
+  const rival = state.rivals[0];
+  if (!rival) return null;
+  preview.agency = "rival";
+  preview.rivalId = rival.id;
+  preview.contract = {
+    commission: ask.commission,
+    start: { ...state.date },
+    termYears: ask.termYears,
+    exclusive: true,
+    exitClause: false,
+  };
+  if (!existing) state.clients.push(preview);
+  return rival.name;
+}
+
+export function respondApproach(
+  input: GameState,
+  catalog: Catalog,
+  approachId: string,
+  action: "accept" | "decline" | "counter",
+  terms?: ApproachAsk,
+): ActionResult {
+  const state = clone(input);
+  const approach = state.approaches.find((row) => row.id === approachId);
+  if (!approach) return { state: input, ok: false, message: "That meeting is not in this save.", href: "/dashboard" };
+  presentApproach(approach);
+  const meeting = `/meetings/${approach.id}`;
+  const block = approachBlocker(state, approach);
+  const rosterFull = Boolean(block?.includes("roster is full"));
+  if (block && !rosterFull) {
+    const leaving = approach.status !== "pending" && action === "decline";
+    settleClosedApproach(state, approach, block);
+    const onRoster = state.clients.find((row) => row.personId === approach.personId && row.agency === "player" && row.contract);
+    return {
+      state,
+      ok: leaving || Boolean(onRoster),
+      message: block,
+      href: onRoster ? `/actors/${approach.personId}` : leaving ? "/dashboard" : meeting,
+    };
+  }
+  if (approach.status !== "pending") {
+    closeApproachInbox(state, approach);
+    return { state, ok: false, message: block ?? "That meeting is already closed.", href: "/dashboard" };
+  }
+  if (action === "decline") {
+    approach.status = "passed";
+    const rival = handToRival(state, catalog, approach.personId, approach.ask);
+    const reason = rival
+      ? `${approach.name} took the pass personally and signed with ${rival}.`
+      : `${approach.name} left it there. They may come back, or they may not.`;
+    approach.lastReply = { outcome: "passed", reason };
+    closeApproachInbox(state, approach);
+    return { state, ok: true, message: reason, href: "/dashboard" };
+  }
+  if (rosterFull && block) {
+    return { state: input, ok: false, message: block, href: meeting };
+  }
+  const offer = action === "counter" && terms ? normalizeAsk(terms) : { ...approach.ask };
+  if (action === "accept") {
+    const signed = signClient(state, catalog, approach.personId, toTerms(approach.ask));
+    if (!signed.ok) return { ...signed, href: signed.href ?? meeting };
+    return signed;
+  }
+  const person = catalog.actors.find((actor) => actor.id === approach.personId);
+  const traits = person ? clientFromCatalog(person, "unsigned", state.date, null).traits : evenTraits();
+  const judged = judgeApproachCounter(approach.ask, offer, traits, state.agency.reputation, approach.walkAwayCommission);
+  if (judged.outcome === "walked") {
+    approach.status = "walked";
+    approach.lastReply = { outcome: "walked", reason: judged.reason };
+    closeApproachInbox(state, approach);
+    return { state, ok: false, message: judged.reason, href: meeting };
+  }
+  if (judged.outcome === "counter") {
+    approach.ask = judged.nextAsk;
+    approach.desiredCommission = judged.nextAsk.commission;
+    approach.lastReply = { outcome: "counter", reason: judged.reason };
+    return { state, ok: true, message: judged.reason, href: meeting };
+  }
+  const signed = signClient(state, catalog, approach.personId, toTerms(judged.nextAsk));
+  if (!signed.ok) return { ...signed, href: signed.href ?? meeting };
+  const done = signed.state.approaches.find((row) => row.id === approachId);
+  if (done) done.lastReply = { outcome: "accepted", reason: judged.reason };
+  return { ...signed, message: `${signed.message} ${judged.reason}` };
 }
 
 export function hireOrUpgrade(input: GameState, role: StaffRole): ActionResult {
@@ -367,9 +641,11 @@ export function resolveBrand(input: GameState, dealId: string, accept: boolean):
   if (!client?.contract) return { state, ok: false, message: "They are not signed." };
   if (!accept) {
     deal.status = "declined";
+    closeInbox(state, deal.id);
     return { state, ok: true, message: `Passed on ${deal.brand}.` };
   }
   deal.status = "active";
+  closeInbox(state, deal.id);
   const commission = Math.round(deal.fee * (client.contract.commission / 100));
   book(state, commission, `${deal.brand} deal · ${client.name}`);
   client.stats.buzz = clamp(client.stats.buzz + 8, 1, 99);
@@ -389,6 +665,7 @@ export function applyEventChoice(state: GameState, eventId: string, choiceId: st
   const choice = event.choices.find((c) => c.id === choiceId) ?? event.choices[0];
   if (!choice) return { state, ok: false, message: "No choice on that event." };
   event.resolved = choice.id;
+  closeInbox(state, event.id);
   const client = event.personId ? state.clients.find((c) => c.personId === event.personId && c.agency === "player") : undefined;
   const project = event.projectId ? state.projects.find((p) => p.id === event.projectId) : undefined;
   const id = choice.id;

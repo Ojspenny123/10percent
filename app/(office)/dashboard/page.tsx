@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { approachAction, eventAction, readInboxAction } from "@/lib/actions";
+import { eventAction, readInboxAction } from "@/lib/actions";
+import { Portrait } from "@/components/portrait";
 import { Card, Empty, Explain, FlashBanner, MoodDot, PageHeader, buttonClass } from "@/components/ui";
 import { formatDate, money } from "@/lib/format";
 import { readSlot } from "@/lib/game";
-import { absWeek, clientAttention, contractEnd, describeAssignment } from "@/engine";
+import { loadCatalog } from "@/lib/catalog";
+import { absWeek, clientAttention, clientFromCatalog, contractEnd, describeAssignment, presentApproach } from "@/engine";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +15,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const active = await readSlot();
   if (!active) redirect("/");
   const { state } = active;
+  const catalog = await loadCatalog();
+  for (const approach of state.approaches) presentApproach(approach);
   const clients = state.clients.filter((client) => client.agency === "player");
   const offers = state.offers.filter((offer) => offer.status === "pending");
   const approaches = state.approaches.filter((approach) => approach.status === "pending");
@@ -45,7 +49,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {events.length > 0 ? (
         <div className="mb-6 space-y-3">
           {events.map((event) => (
-            <Card key={event.id} className="border-gold bg-gold-soft">
+            <Card key={event.id} id={`event-${event.id}`} className="scroll-mt-24 border-gold bg-gold-soft">
               <h2 className="font-serif text-2xl">{event.title}</h2>
               <p className="mt-2 text-sm">{event.body}</p>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -67,8 +71,41 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="space-y-3">
           <h2 className="font-serif text-2xl">This week</h2>
           {state.lastTurn.length === 0 ? <p className="text-sm text-muted">Nothing moved yet. Advance a week.</p> : null}
+          <div className="space-y-3">
+            {approaches.map((approach) => {
+              const person = catalog.actors.find((actor) => actor.id === approach.personId);
+              const known = state.clients.find((client) => client.personId === approach.personId);
+              const preview = known ?? (person ? clientFromCatalog(person, "unsigned", state.date, null) : null);
+              const stats = preview?.stats;
+              return (
+                <Link key={approach.id} href={`/meetings/${approach.id}`} className="block rounded-2xl border border-line bg-white p-4 hover:border-teal">
+                  <div className="flex gap-4">
+                    <div className="h-28 w-20 shrink-0 overflow-hidden rounded-xl bg-blush">
+                      <Portrait path={approach.profilePath} name={approach.name} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-serif text-xl">{approach.name} wants a meeting</p>
+                          <p className="text-sm text-muted">
+                            {approach.fame}
+                            {stats ? ` · star ${stats.starPower} · talent ${stats.talent} · buzz ${stats.buzz}` : ""}
+                          </p>
+                        </div>
+                        <span className={buttonClass()}>Take the meeting</span>
+                      </div>
+                      <p className="mt-2 text-sm">{approach.pitch}</p>
+                      <p className="mt-1 text-sm text-muted">
+                        Asking {approach.ask.commission}% · {approach.ask.termYears} years · {approach.ask.exclusive ? "exclusive" : "non-exclusive"} · open through {formatDate(approach.expires)}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
           <ul className="space-y-2">
-            {state.inbox.slice(0, 12).map((item) => (
+            {state.inbox.filter((item) => !item.resolved && item.kind !== "approach").slice(0, 16).map((item) => (
               <li key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="font-medium">{item.href ? <Link href={item.href} className="hover:text-teal">{item.title}</Link> : item.title}</p>
@@ -78,30 +115,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </li>
             ))}
           </ul>
-          {approaches.map((approach) => (
-            <Card key={approach.id}>
-              <h3 className="font-serif text-xl">{approach.name} wants in</h3>
-              <p className="mt-1 text-sm text-muted">{approach.pitch} Asking about {approach.desiredCommission}%.</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <form action={approachAction}>
-                  <input type="hidden" name="id" value={approach.id} />
-                  <input type="hidden" name="accept" value="yes" />
-                  <button className={buttonClass()}>Sign at {approach.desiredCommission}%</button>
-                </form>
-                <form action={approachAction} className="flex items-center gap-2">
-                  <input type="hidden" name="id" value={approach.id} />
-                  <input type="hidden" name="accept" value="yes" />
-                  <input name="commission" type="number" min={5} max={20} defaultValue={10} className="w-16 rounded-lg border border-line px-2 py-1 text-sm" aria-label="Commission percent" />
-                  <button className={buttonClass("secondary")}>Counter %</button>
-                </form>
-                <form action={approachAction}>
-                  <input type="hidden" name="id" value={approach.id} />
-                  <input type="hidden" name="accept" value="no" />
-                  <button className={buttonClass("danger")}>Pass</button>
-                </form>
-              </div>
-            </Card>
-          ))}
           {clients.length === 0 && approaches.length === 0 ? (
             <Empty title="No clients yet" body="The phone is quiet because nobody knows the shop. Scout the talent list." href="/talent" action="Find someone" />
           ) : null}

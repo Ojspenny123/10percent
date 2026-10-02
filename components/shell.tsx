@@ -26,7 +26,7 @@ const NAV = [
 ] as const;
 
 export function Shell({ state, children }: { state: GameState; children: React.ReactNode }) {
-  const unread = state.inbox.filter((item) => !item.read).length;
+  const unread = state.inbox.filter((item) => !item.read && !item.resolved).length;
   return (
     <div className="min-h-screen md:grid md:grid-cols-[240px_minmax(0,1fr)]">
       <aside className="border-b border-line bg-white/80 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:border-b-0 md:border-r">

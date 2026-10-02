@@ -14,7 +14,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   if (!active) redirect("/");
   const status = params.status || "pending";
   const offers = active.state.offers.filter((offer) => (status === "all" ? true : offer.status === status));
-  const selected = active.state.offers.find((offer) => offer.id === params.offer) ?? offers[0];
+  const selected = (params.offer ? active.state.offers.find((offer) => offer.id === params.offer) : undefined) ?? offers[0];
   const project = selected ? active.state.projects.find((item) => item.id === selected.projectId) : undefined;
   const client = selected ? active.state.clients.find((item) => item.personId === selected.personId) : undefined;
   const conflict = selected && project && client ? pendingConflictMessage(active.state, client.personId, project) : null;
@@ -27,7 +27,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
           <Link key={item} href={`/offers?status=${item}`} className={status === item ? "font-medium text-coral-dark" : "text-muted"}>{item.replace("_", " ")}</Link>
         ))}
       </div>
-      {offers.length === 0 ? <Empty title="No offers in this pile" body="Advance the week. Volume follows fame, buzz, reputation, and junior agents." href="/dashboard" action="Back to the inbox" /> : (
+      {!selected && offers.length === 0 ? <Empty title="No offers in this pile" body="Advance the week. Volume follows fame, buzz, reputation, and junior agents." href="/dashboard" action="Back to the inbox" /> : (
         <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
           <ul className="space-y-2">
             {offers.map((offer) => {
@@ -77,7 +77,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                   <div className="flex flex-wrap gap-2">
                     <form action={acceptOfferAction}>
                       <input type="hidden" name="offerId" value={selected.id} />
-                      <button className={buttonClass()} disabled={Boolean(conflict)}>Accept</button>
+                      <button className={buttonClass()}>Accept</button>
                     </form>
                     <form action={declineOfferAction}>
                       <input type="hidden" name="offerId" value={selected.id} />
@@ -105,7 +105,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                   </form>
                   <p className="text-xs text-muted">Studio walk-away is hidden. Heat with {selected.studio}: {client.studioHeat[selected.studio] ?? 0}.</p>
                 </div>
-              ) : <p className="mt-4 text-sm">Status: {selected.status.replace("_", " ")}.</p>}
+              ) : <p className="mt-4 text-sm">This offer is {selected.status.replaceAll("_", " ")}. Nothing left to sign on it.</p>}
             </Card>
           ) : null}
         </div>

@@ -28,7 +28,7 @@ import { loadCatalog } from "@/lib/catalog";
 import { SLOT_COOKIE, parseState, writeState } from "@/lib/game";
 import { prisma } from "@/lib/prisma";
 
-async function withSave(path: string, run: (state: GameState) => Promise<{ state: GameState; ok: boolean; message: string; warning?: string }> | { state: GameState; ok: boolean; message: string; warning?: string }) {
+async function withSave(path: string, run: (state: GameState) => Promise<{ state: GameState; ok: boolean; message: string; warning?: string; href?: string }> | { state: GameState; ok: boolean; message: string; warning?: string; href?: string }) {
   const jar = await cookies();
   const id = jar.get(SLOT_COOKIE)?.value;
   if (!id) redirect("/");
@@ -36,15 +36,16 @@ async function withSave(path: string, run: (state: GameState) => Promise<{ state
   if (!row) redirect("/");
   const current = parseState(row.state);
   const result = await run(current);
+  const dest = result.href || path;
   if (result.warning) {
-    const join = path.includes("?") ? "&" : "?";
-    redirect(`${path}${join}warn=${encodeURIComponent(result.warning)}`);
+    const join = dest.includes("?") ? "&" : "?";
+    redirect(`${dest}${join}warn=${encodeURIComponent(result.warning)}`);
   }
   await writeState(id, result.state);
   revalidatePath("/", "layout");
-  const join = path.includes("?") ? "&" : "?";
+  const join = dest.includes("?") ? "&" : "?";
   const key = result.ok ? "notice" : "error";
-  redirect(`${path}${join}${key}=${encodeURIComponent(result.message)}`);
+  redirect(`${dest}${join}${key}=${encodeURIComponent(result.message)}`);
 }
 
 export async function createGameAction(formData: FormData) {
@@ -133,12 +134,18 @@ export async function releaseAction(formData: FormData) {
   await withSave("/roster", (state) => releaseClient(state, personId));
 }
 
-export async function approachAction(formData: FormData) {
+export async function meetingAction(formData: FormData) {
   const id = String(formData.get("id") || "");
-  const accept = formData.get("accept") === "yes";
-  const commission = formData.get("commission") ? Number(formData.get("commission")) : undefined;
+  const intent = String(formData.get("intent") || "decline");
+  const action = intent === "accept" || intent === "counter" ? intent : "decline";
   const catalog = await loadCatalog();
-  await withSave("/dashboard", (state) => respondApproach(state, catalog, id, accept, commission));
+  const terms = {
+    commission: Number(formData.get("commission") || 10),
+    termYears: Number(formData.get("years") || 2),
+    exclusive: formData.get("exclusive") === "yes",
+    exitClause: formData.get("exitClause") === "yes",
+  };
+  await withSave(`/meetings/${id}`, (state) => respondApproach(state, catalog, id, action, terms));
 }
 
 export async function acceptOfferAction(formData: FormData) {

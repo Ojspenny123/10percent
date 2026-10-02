@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { acceptOffer, counterOffer, signClient } from "./actions";
+import { acceptOffer, counterOffer, judgeApproachCounter, pushApproach, respondApproach, signClient, walkAwayCommission } from "./actions";
 import { GENRES } from "./constants";
 import { createGame } from "./create";
 import { fixtureCatalog } from "./fixture";
 import { genreTotal, spawnFilm, spawnSeries } from "./generate";
-import { isEligible } from "./people";
+import { clientFromCatalog, isEligible, rosterCap } from "./people";
 import { makeRng, next } from "./rng";
 import { decideRenewal, shouldWriteOut } from "./results";
 import { absWeek, overlaps, personBlocks, scheduleConflict } from "./schedule";
@@ -261,6 +261,119 @@ function pushManualOffer(state: GameState, project: { id: string; studio: string
   });
   return next;
 }
+
+describe("approaches", () => {
+  function unsignedId(state: GameState): number {
+    const taken = new Set(state.clients.map((client) => client.personId));
+    const actor = catalog.actors.find((row) => !taken.has(row.id) && row.id < 9000);
+    if (!actor) throw new Error("fixture has no free actor");
+    return actor.id;
+  }
+
+  it("accepts their terms, signs the contract, and clears the inbox", () => {
+    const state = fresh();
+    const approach = pushApproach(state, catalog, unsignedId(state), { commission: 10 })!;
+    const result = respondApproach(state, catalog, approach.id, "accept");
+    expect(result.ok).toBe(true);
+    const client = result.state.clients.find((row) => row.personId === approach.personId && row.agency === "player");
+    expect(client?.contract).toMatchObject({ commission: approach.ask.commission, termYears: 2, exclusive: true, exitClause: true });
+    expect(result.state.approaches.find((row) => row.id === approach.id)?.status).toBe("signed");
+    expect(result.state.inbox.find((row) => row.refId === approach.id)?.resolved).toBe(true);
+    expect(result.href).toBe(`/actors/${approach.personId}`);
+    expect(result.state.agency.reputation).toBeGreaterThan(state.agency.reputation);
+  });
+
+  it("signs when a counter is inside their ask", () => {
+    const state = fresh();
+    const approach = pushApproach(state, catalog, unsignedId(state), { commission: 12 })!;
+    const softer = Math.max(5, approach.ask.commission - 1);
+    const result = respondApproach(state, catalog, approach.id, "counter", { ...approach.ask, commission: softer });
+    expect(result.ok).toBe(true);
+    const client = result.state.clients.find((row) => row.personId === approach.personId && row.agency === "player");
+    expect(client?.contract?.commission).toBe(softer);
+    expect(result.state.approaches.find((row) => row.id === approach.id)?.status).toBe("signed");
+  });
+
+  it("counters back when the offer is close but not comfortable", () => {
+    const traits = { greed: 40, loyalty: 50, ambition: 30 };
+    const ask = { commission: 10, termYears: 2, exclusive: true, exitClause: true };
+    const walk = walkAwayCommission(10, traits, 16);
+    expect(walk).toBe(14);
+    const judged = judgeApproachCounter(ask, { ...ask, commission: 13 }, traits, 16, walk);
+    expect(judged.outcome).toBe("counter");
+    expect(judged.nextAsk.commission).toBe(12);
+    expect(judged.nextAsk.exclusive).toBe(true);
+    const same = judgeApproachCounter(ask, ask, traits, 16, walk);
+    expect(same.outcome).toBe("accepted");
+  });
+
+  it("walks away when the counter clears their hidden line", () => {
+    const traits = { greed: 90, loyalty: 20, ambition: 40 };
+    const ask = { commission: 10, termYears: 2, exclusive: true, exitClause: true };
+    expect(walkAwayCommission(10, traits, 16)).toBe(10);
+    const judged = judgeApproachCounter(ask, { ...ask, commission: 11 }, traits, 16, 10);
+    expect(judged.outcome).toBe("walked");
+
+    const state = fresh();
+    const approach = pushApproach(state, catalog, unsignedId(state), { commission: 10 })!;
+    approach.walkAwayCommission = approach.ask.commission;
+    const result = respondApproach(state, catalog, approach.id, "counter", { ...approach.ask, commission: approach.ask.commission + 4 });
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/past what they will live with/);
+    expect(result.state.approaches.find((row) => row.id === approach.id)?.status).toBe("walked");
+    expect(result.state.inbox.find((row) => row.refId === approach.id)?.resolved).toBe(true);
+    expect(result.state.clients.some((row) => row.personId === approach.personId && row.agency === "player")).toBe(false);
+  });
+
+  it("expires the approach on the week after it lapses and drops it from the active inbox", () => {
+    const state = fresh();
+    const approach = pushApproach(state, catalog, unsignedId(state), { weeks: 0 })!;
+    expect(approach.expires).toEqual(state.date);
+    const advanced = advanceWeeks(state, catalog, 1, { autoResolveEvents: true });
+    const expired = advanced.state.approaches.find((row) => row.id === approach.id);
+    expect(expired?.status).toBe("expired");
+    expect(advanced.state.inbox.find((row) => row.refId === approach.id)?.resolved).toBe(true);
+    expect(advanced.state.inbox.some((row) => !row.resolved && row.href === `/meetings/${approach.id}`)).toBe(true);
+    const late = respondApproach(advanced.state, catalog, approach.id, "accept");
+    expect(late.ok).toBe(false);
+    expect(late.message).toMatch(/expired/);
+  });
+
+  it("refuses a meeting when a rival already signed them", () => {
+    const state = fresh();
+    const personId = unsignedId(state);
+    const approach = pushApproach(state, catalog, personId, { commission: 10 })!;
+    const rival = state.rivals[0]!;
+    const client = clientFromCatalog(catalog.actors.find((row) => row.id === personId)!, "rival", state.date, rival.id);
+    client.contract = { commission: 10, start: { ...state.date }, termYears: 2, exclusive: true, exitClause: false };
+    state.clients.push(client);
+    const result = respondApproach(state, catalog, approach.id, "accept");
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/signed with/);
+    expect(result.state.clients.find((row) => row.personId === personId)?.agency).toBe("rival");
+    expect(result.state.approaches.find((row) => row.id === approach.id)?.status).toBe("passed");
+    expect(result.state.inbox.find((row) => row.refId === approach.id)?.resolved).toBe(true);
+  });
+
+  it("blocks a signing when the roster is at capacity", () => {
+    let state = fresh();
+    const ids = catalog.actors.filter((actor) => !state.clients.some((client) => client.personId === actor.id) && actor.id < 9000);
+    let cursor = 0;
+    while (state.clients.filter((row) => row.agency === "player" && row.contract).length < rosterCap(state.agency.tier)) {
+      const signed = signClient(state, catalog, ids[cursor]!.id, { commission: 5, years: 2, exclusive: true, exitClause: true });
+      expect(signed.ok).toBe(true);
+      state = signed.state;
+      cursor += 1;
+    }
+    const cap = rosterCap(state.agency.tier);
+    const approach = pushApproach(state, catalog, ids[cursor]!.id, { commission: 10 })!;
+    const result = respondApproach(state, catalog, approach.id, "accept");
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/roster is full/);
+    expect(result.state.approaches.find((row) => row.id === approach.id)?.status).toBe("pending");
+    expect(result.state.clients.filter((row) => row.agency === "player" && row.contract)).toHaveLength(cap);
+  });
+});
 
 function fakeMember(partial: Partial<CastMember>): CastMember {
   return {

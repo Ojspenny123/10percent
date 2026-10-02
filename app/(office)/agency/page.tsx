@@ -53,7 +53,7 @@ export default async function AgencyPage({ searchParams }: { searchParams: Promi
       <h2 className="mb-3 mt-8 font-serif text-2xl">Brand deals</h2>
       <div className="space-y-2">
         {state.brandDeals.filter((deal) => deal.status === "offered" || deal.status === "active").map((deal) => (
-          <Card key={deal.id}>
+          <Card key={deal.id} id={`brand-${deal.id}`} className="scroll-mt-24">
             <p className="font-medium">{deal.personName} · {deal.brand}</p>
             <p className="text-sm text-muted">{money(deal.fee)} through {formatDate(deal.end)} · {deal.status}</p>
             {deal.status === "offered" ? (

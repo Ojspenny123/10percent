@@ -186,6 +186,14 @@ export function agencyTier(reputation: number): AgencyTier {
   return "Boutique";
 }
 
+export function rosterCap(tier: AgencyTier): number {
+  if (tier === "Powerhouse") return 72;
+  if (tier === "Major") return 48;
+  if (tier === "Established") return 32;
+  if (tier === "Rising") return 20;
+  return 12;
+}
+
 export function moodFromStars(stars: number): Mood {
   if (stars >= 5) return "Thrilled";
   if (stars >= 4) return "Content";

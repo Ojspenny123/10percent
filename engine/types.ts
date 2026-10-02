@@ -268,6 +268,13 @@ export type Offer = {
   created: GameDate;
 };
 
+export type ApproachAsk = {
+  commission: number;
+  termYears: number;
+  exclusive: boolean;
+  exitClause: boolean;
+};
+
 export type Approach = {
   id: string;
   personId: number;
@@ -275,9 +282,14 @@ export type Approach = {
   profilePath: string | null;
   fame: FameTier;
   pitch: string;
+  line: string;
+  opening: ApproachAsk;
+  ask: ApproachAsk;
   desiredCommission: number;
+  walkAwayCommission: number;
   expires: GameDate;
-  status: "pending" | "signed" | "passed" | "expired";
+  status: "pending" | "signed" | "passed" | "expired" | "walked";
+  lastReply?: { outcome: "accepted" | "counter" | "walked" | "passed"; reason: string };
 };
 
 export type GameEvent = {
@@ -301,6 +313,7 @@ export type InboxItem = {
   body: string;
   href?: string;
   read: boolean;
+  resolved?: boolean;
   refId?: string;
 };
 
@@ -417,4 +430,5 @@ export type ActionResult = {
   ok: boolean;
   message: string;
   warning?: string;
+  href?: string;
 };
