@@ -3,6 +3,10 @@ import type { RngState } from "./rng";
 export type Era = "1990s" | "2000s" | "today";
 
 export type FameTier = "Unknown" | "Working" | "Known" | "A-list" | "Icon";
+export type Medium = "Film" | "TV" | "Both";
+export type SeriesDealStyle = "single" | "guaranteed" | "option";
+export type PilotStatus = "shooting" | "awaiting" | "picked_up" | "passed" | "retooled";
+export type LedgerBucket = "film" | "series" | "pilot" | "bonus" | "overhead" | "other";
 export type CareerStage = "Newcomer" | "Rising" | "Peak" | "Established" | "Declining" | "Comeback";
 export type Mood = "Thrilled" | "Content" | "Uneasy" | "Unhappy" | "Furious";
 export type WorkStatus = "AVAILABLE" | "IN_PREP" | "SHOOTING" | "POST_PRODUCTION" | "AIRING";
@@ -41,6 +45,13 @@ export type RealCredit = {
   mediaType: string;
 };
 
+export type CreditSide = {
+  count: number;
+  avgRating: number;
+  recent: number;
+  titles: { title: string; year: string; rating: number }[];
+};
+
 export type CatalogPerson = {
   id: number;
   name: string;
@@ -56,6 +67,8 @@ export type CatalogPerson = {
   avgRating: number;
   genreMix: Record<string, number>;
   knownFor: RealCredit[];
+  movieCredits?: CreditSide;
+  tvCredits?: CreditSide;
 };
 
 export type Catalog = {
@@ -133,6 +146,12 @@ export type Client = {
   studioHeat: Record<string, number>;
   overrides: number;
   unhappyStreak: number;
+  medium: Medium;
+  filmStar: number;
+  tvStar: number;
+  filmPrestige: number;
+  tvPrestige: number;
+  franchises: FranchiseLock[];
 };
 
 export type Review = {
@@ -164,6 +183,14 @@ export type CastMember = {
   writtenOut: boolean;
   active: boolean;
   awardTrack: "actor" | "actress" | "open";
+  episodeFee?: number;
+  episodes?: number;
+  blocks?: WorkBlock[];
+  seriesDeal?: SeriesDeal;
+  seasonNumber?: number;
+  bonuses?: BoxBonus[];
+  /** Episodes already commissioned, so weekly series pay does not double-count. */
+  episodesPaid?: number;
 };
 
 export type Season = {
@@ -181,6 +208,8 @@ export type Season = {
   audienceScore?: number;
   renewal: RenewalOutcome;
   reviews: Review[];
+  producedYear?: number;
+  releasedYear?: number;
 };
 
 export type Project = {
@@ -238,6 +267,8 @@ export type Project = {
   competitionNote?: string;
   ended: boolean;
   cancelled: boolean;
+  origin?: "pilot" | "straight" | "limited";
+  pilot?: PilotHold;
 };
 
 export type Offer = {
@@ -266,6 +297,15 @@ export type Offer = {
   dateShiftWeeks: number;
   studio: string;
   created: GameDate;
+  pay?: "flat" | "episode" | "pilot";
+  episodeFee?: number;
+  episodes?: number;
+  seasonNumber?: number;
+  deal?: { style: SeriesDealStyle; seasons: number; annualBump: number };
+  blocks?: WorkBlock[];
+  bonuses?: BoxBonus[];
+  willingness?: string;
+  renewal?: boolean;
 };
 
 export type ApproachAsk = {
@@ -369,6 +409,54 @@ export type Hold = {
   start: GameDate;
   end: GameDate;
   reason: string;
+  kind?: "personal" | "pilot" | "franchise" | "series";
+  projectId?: string;
+  /** Pilot holds show a status through this date without blocking the gaps. */
+  until?: GameDate;
+};
+
+export type WorkBlock = {
+  start: GameDate;
+  weeks: number;
+  episodes: number;
+};
+
+export type SeriesDeal = {
+  style: SeriesDealStyle;
+  seasons: number;
+  seasonsServed: number;
+  annualBump: number;
+  episodeFee: number;
+  role: RoleType;
+};
+
+export type PilotHold = {
+  status: PilotStatus;
+  decision: GameDate;
+  optionSeasons: number;
+  optionRole: RoleType;
+  optionFee: number;
+  optionEpisodes: number;
+};
+
+export type BoxBonus = {
+  multiple: number;
+  amount: number;
+  paid?: boolean;
+};
+
+export type FranchiseFilm = {
+  number: number;
+  prep: GameDate;
+  shootWeeks: number;
+  fee: number;
+  status: "held" | "offered" | "shot" | "dropped";
+};
+
+export type FranchiseLock = {
+  id: string;
+  title: string;
+  films: FranchiseFilm[];
 };
 
 export type LedgerEntry = {
@@ -376,6 +464,7 @@ export type LedgerEntry = {
   label: string;
   amount: number;
   balance: number;
+  bucket?: LedgerBucket;
 };
 
 export type StaffMember = { role: StaffRole; level: number };
@@ -423,6 +512,8 @@ export type GameState = {
   lastTurn: string[];
   insolventWeeks: number;
   ceremoniesRun: string[];
+  /** In-game date of the last weekly autosave or manual save. Action writes do not move it. */
+  lastAutosave?: GameDate;
 };
 
 export type ActionResult = {

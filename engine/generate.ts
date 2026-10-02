@@ -270,6 +270,7 @@ export function blankProject(state: GameState, partial: Partial<Project> & Pick<
     commissionsPaid: partial.commissionsPaid ?? [],
     ended: partial.ended ?? false,
     cancelled: partial.cancelled ?? false,
+    origin: partial.origin,
     criticScore: partial.criticScore,
     audienceScore: partial.audienceScore,
     openingWeekend: partial.openingWeekend,
@@ -445,6 +446,8 @@ export function spawnSeries(
     viewership: [],
     renewal: "pending",
     reviews: [],
+    producedYear: shootStart.year,
+    releasedYear: premiere.year,
   };
   const exclude = new Set(options.excludePeople ?? []);
   if (options.openFor) exclude.add(options.openFor.client.personId);
@@ -501,6 +504,7 @@ export function spawnSeries(
           forPersonId: options.openFor.client.personId,
         }
       : null,
+    origin: format === "limited" || format === "miniseries" || format === "anthology" ? "limited" : "straight",
   });
   noteGenre(state, genre);
   state.projects.push(project);

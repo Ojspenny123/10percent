@@ -1,22 +1,24 @@
 import { STAFF_INFO } from "./constants";
 import { castFromClient, nextId } from "./generate";
 import { agencyTier, clamp, clientFromCatalog, expectedFee, genreFit, rosterCap } from "./people";
-import { addWeeks, cmpDate, formatDate, scheduleConflict, shootEnd, tryShift } from "./schedule";
-import type { ActionResult, Approach, ApproachAsk, BudgetTier, Catalog, Client, GameState, HiddenTraits, Offer, Project, StaffRole } from "./types";
+import { longOrderRefusal } from "./career";
+import { addWeeks, blocksConflict, cmpDate, formatDate, scheduleConflict, shootEnd, tryShift } from "./schedule";
+import type { ActionResult, Approach, ApproachAsk, BudgetTier, Catalog, Client, GameState, HiddenTraits, LedgerBucket, Offer, Project, StaffRole } from "./types";
 
 function clone(state: GameState): GameState {
   return structuredClone(state);
 }
 
-export function book(state: GameState, amount: number, label: string): void {
+export function book(state: GameState, amount: number, label: string, bucket: LedgerBucket = "other"): void {
   state.agency.cash = Math.round(state.agency.cash + amount);
   state.ledger.unshift({
     date: { ...state.date },
     label,
     amount: Math.round(amount),
     balance: state.agency.cash,
+    bucket,
   });
-  if (state.ledger.length > 120) state.ledger.length = 120;
+  if (state.ledger.length > 400) state.ledger.length = 400;
 }
 
 export function bumpRep(state: GameState, delta: number): void {
@@ -40,6 +42,9 @@ export function actorFit(client: Client, project: Project, fee: number, billing:
   if (client.nextPreference === "commercial" && (project.budgetTier === "micro-indie" || project.budgetTier === "indie")) score -= 12;
   if (project.directorAcclaim >= 78 && client.traits.prestigeVsMoney >= 50) score += 10;
   if (project.scriptQuality < 42) score -= 8;
+  const seasonEpisodes = project.kind === "series" ? project.seasons[project.seasons.length - 1]?.episodes ?? 0 : 0;
+  const longOrder = project.kind === "series" ? longOrderRefusal(client, role, seasonEpisodes) : null;
+  if (longOrder) score -= 30;
   score = Math.round(score);
   if (score < 52) {
     const bits = [];
@@ -48,11 +53,13 @@ export function actorFit(client: Client, project: Project, fee: number, billing:
     if (client.traits.prestigeVsMoney >= 68 && project.prestige < 48) bits.push("this reads as a paycheck, and they are not in a paycheck mood");
     if (client.traits.greed >= 70 && fee < fair * 0.85) bits.push("the quote is light for them");
     if (client.traits.ambition >= 75 && billing > 2) bits.push("the billing is beneath where they think they are");
+    if (longOrder) bits.push(longOrder);
     return {
       score,
       warning: `${client.name} may refuse ${project.title}. ${bits.join("; ") || "It clashes with what they want right now."} Confirming an override will cost loyalty${score < 38 ? ", and they may still walk" : ""}.`,
     };
   }
+  if (longOrder) return { score, warning: longOrder };
   return { score };
 }
 
@@ -75,7 +82,9 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
   const project = state.projects.find((p) => p.id === offer.projectId);
   const client = state.clients.find((c) => c.personId === offer.personId && c.agency === "player");
   if (!project || !client) return { state, ok: false, message: "The offer is missing a project or a client." };
-  const conflict = scheduleConflict(state, client.personId, project.prepStart, shootEnd(project), project.id);
+  const conflict = offer.blocks?.length
+    ? blocksConflict(state, client.personId, offer.blocks, project.id)
+    : scheduleConflict(state, client.personId, project.prepStart, shootEnd(project), project.id);
   if (conflict) return { state, ok: false, message: conflict.message };
   const fit = actorFit(client, project, offer.fee, offer.billing, offer.role);
   const better = betterOfferWarning(state, offer);
@@ -105,8 +114,76 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
     client.overrides += 1;
     if (client.mood === "Content" || client.mood === "Thrilled") client.mood = "Uneasy";
   }
-  const character = project.openRole?.character ?? "Lead";
-  project.cast.push(castFromClient(client, offer.role, offer.billing, offer.fee, offer.backend, character));
+  const character = project.openRole?.character ?? offer.character ?? "Lead";
+  const existing = offer.renewal ? project.cast.find((member) => member.personId === client.personId) : undefined;
+  if (existing) {
+    existing.active = true;
+    existing.writtenOut = false;
+    existing.role = offer.role;
+    existing.fee = offer.fee;
+    existing.billing = offer.billing;
+    existing.backend = offer.backend;
+    existing.episodeFee = offer.episodeFee;
+    existing.episodes = offer.episodes;
+    existing.blocks = offer.blocks;
+    existing.seasonNumber = offer.seasonNumber ?? existing.seasonNumber;
+    existing.episodesPaid = 0;
+    if (offer.deal && offer.episodeFee) {
+      existing.seriesDeal = {
+        style: offer.deal.style,
+        seasons: offer.deal.seasons,
+        seasonsServed: (existing.seriesDeal?.seasonsServed ?? 0) + 1,
+        annualBump: offer.deal.annualBump,
+        episodeFee: offer.episodeFee,
+        role: offer.role,
+      };
+    }
+  } else {
+    const member = castFromClient(client, offer.role, offer.billing, offer.fee, offer.backend, character);
+    member.episodeFee = offer.episodeFee;
+    member.episodes = offer.episodes;
+    member.blocks = offer.blocks;
+    member.seasonNumber = offer.seasonNumber ?? (project.kind === "series" ? project.seasons[project.seasons.length - 1]?.number : undefined);
+    member.bonuses = offer.bonuses;
+    if (offer.deal && offer.episodeFee) {
+      member.seriesDeal = {
+        style: offer.deal.style,
+        seasons: offer.deal.seasons,
+        seasonsServed: 1,
+        annualBump: offer.deal.annualBump,
+        episodeFee: offer.episodeFee,
+        role: offer.role,
+      };
+    }
+    project.cast.push(member);
+    if (offer.pay === "pilot" && project.pilot) {
+      state.holds.push({
+        id: `hold_${++state.seq}`,
+        personId: client.personId,
+        start: { ...state.date },
+        end: project.pilot.decision,
+        until: project.pilot.decision,
+        reason: `Pilot option · ${project.title}`,
+        kind: "pilot",
+        projectId: project.id,
+      });
+    }
+    if (offer.deal?.style === "guaranteed" && offer.pay === "episode") {
+      const season = project.seasons[project.seasons.length - 1];
+      if (season) {
+        const start = addWeeks(season.shootStart, season.shootWeeks);
+        state.holds.push({
+          id: `hold_${++state.seq}`,
+          personId: client.personId,
+          start,
+          end: addWeeks(start, offer.deal.seasons * 36),
+          reason: `Multi-season lock · ${project.title}`,
+          kind: "series",
+          projectId: project.id,
+        });
+      }
+    }
+  }
   project.cast.sort((a, b) => a.billing - b.billing);
   project.openRole = null;
   project.playerInvolved = true;
@@ -145,7 +222,16 @@ export function declineOffer(input: GameState, offerId: string): ActionResult {
   offer.status = "declined";
   closeInbox(state, offer.id);
   const project = state.projects.find((p) => p.id === offer.projectId);
-  if (project) project.openRole = null;
+  if (project) {
+    project.openRole = null;
+    if (offer.renewal) {
+      const member = project.cast.find((row) => row.personId === offer.personId);
+      if (member) {
+        member.writtenOut = true;
+        member.active = false;
+      }
+    }
+  }
   const client = state.clients.find((c) => c.personId === offer.personId);
   return { state, ok: true, message: `Declined ${project?.title ?? "the offer"}${client ? ` for ${client.name}` : ""}.` };
 }
@@ -194,6 +280,7 @@ export function counterOffer(
     offer.dateShiftWeeks = shift;
   }
   offer.fee = fee;
+  if (offer.pay === "episode" && offer.episodes) offer.episodeFee = Math.max(5_000, Math.round(fee / offer.episodes / 1000) * 1000);
   offer.billing = billing;
   offer.backend = Math.round(backend * 10) / 10;
   if (perk && offer.perkAvailable) offer.perk = perk;
@@ -789,7 +876,11 @@ function loseClient(state: GameState, client: Client, why: string): void {
   });
 }
 
-export function pendingConflictMessage(state: GameState, personId: number, project: Project): string | null {
+export function pendingConflictMessage(state: GameState, personId: number, project: Project, blocks?: { start: GameState["date"]; weeks: number }[]): string | null {
+  if (blocks?.length) return blocksConflict(state, personId, blocks, project.id)?.message ?? null;
+  if (project.origin === "pilot" || project.pilot) {
+    return scheduleConflict(state, personId, project.shootStart, addWeeks(project.shootStart, 1), project.id)?.message ?? null;
+  }
   return scheduleConflict(state, personId, project.prepStart, shootEnd(project), project.id)?.message ?? null;
 }
 

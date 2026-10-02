@@ -81,6 +81,7 @@ async function withSave(path: string, formData: FormData, run: (state: GameState
     redirect(saveFailurePath(dest, error));
   }
   revalidatePath("/", "layout");
+  if (!result.message) redirect(dest);
   const key = result.ok ? "notice" : "error";
   redirect(withParams(dest, { [key]: result.message }));
 }
@@ -149,8 +150,8 @@ export async function advanceAction(formData: FormData) {
     });
     revalidatePath("/", "layout");
     const message = result.message.startsWith("Paused")
-      ? `${result.message} Saved.`
-      : `Advanced ${result.stepped} week${result.stepped === 1 ? "" : "s"} to ${formatDate(result.state.date)}. Saved.`;
+      ? result.message
+      : `Advanced ${result.stepped} week${result.stepped === 1 ? "" : "s"} to ${formatDate(result.state.date)}.`;
     redirect(withParams("/dashboard", { notice: message }));
   } catch (error) {
     if (!(error instanceof PartialSaveError)) throw error;
@@ -260,7 +261,10 @@ export async function readInboxAction(formData: FormData) {
 
 export async function saveNowAction(formData: FormData) {
   const back = String(formData.get("back") || "/dashboard");
-  await withSave(back, formData, (state) => ({ state, ok: true, message: "Saved." }));
+  await withSave(back, formData, (state) => {
+    state.lastAutosave = { ...state.date };
+    return { state, ok: true, message: "" };
+  });
 }
 
 export async function saveAsAction(formData: FormData) {

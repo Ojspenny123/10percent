@@ -66,23 +66,59 @@ export function blockingIntervals(project: Project): Interval[] {
   ];
 }
 
+function intervalWeeks(start: GameDate, weeks: number, projectId: string): Interval {
+  return {
+    start: absWeek(start),
+    end: absWeek(addWeeks(start, Math.max(1, weeks) - 1)),
+    projectId,
+    kind: "block",
+  };
+}
+
+export function memberShootIntervals(
+  project: Project,
+  member: { role: string; episodes?: number; blocks?: { start: GameDate; weeks: number }[]; seasonNumber?: number },
+): Interval[] {
+  if (member.blocks && member.blocks.length > 0) {
+    return member.blocks.map((block) => intervalWeeks(block.start, block.weeks, project.id));
+  }
+  if (project.kind !== "series" || project.seasons.length === 0) return blockingIntervals(project);
+  const season = project.seasons.find((item) => item.number === member.seasonNumber) ?? project.seasons[project.seasons.length - 1]!;
+  if (member.role === "Guest Star") {
+    const weeks = Math.min(2, Math.max(1, member.episodes ?? 1));
+    return [intervalWeeks(season.shootStart, weeks, project.id)];
+  }
+  if (member.role === "Recurring") {
+    const episodes = member.episodes ?? Math.max(1, Math.round(season.episodes / 2));
+    const weeks = Math.max(1, Math.min(season.shootWeeks, Math.round((season.shootWeeks * episodes) / Math.max(1, season.episodes))));
+    return [intervalWeeks(season.shootStart, weeks, project.id)];
+  }
+  const end = absWeek(addWeeks(season.shootStart, Math.max(1, season.shootWeeks) - 1));
+  const weeks = end - absWeek(season.prepStart) + 1;
+  return [intervalWeeks(season.prepStart, weeks, project.id)];
+}
+
 export function personBlocks(state: GameState, personId: number, ignoreProjectId?: string): Interval[] {
   const blocks: Interval[] = [];
   for (const project of state.projects) {
     if (project.id === ignoreProjectId || project.cancelled) continue;
-    const involved =
-      project.cast.some((c) => c.personId === personId && c.active && !c.writtenOut) ||
-      project.openRole?.forPersonId === personId;
-    if (!involved) continue;
-    for (const interval of blockingIntervals(project)) {
-      if (project.openRole?.forPersonId === personId || project.cast.some((c) => c.personId === personId && c.active && !c.writtenOut)) {
-        blocks.push(interval);
-      }
+    if (project.openRole?.forPersonId === personId) {
+      if (project.origin === "pilot" || project.pilot) blocks.push(intervalWeeks(project.shootStart, 2, project.id));
+      else blocks.push(...blockingIntervals(project));
+    }
+    for (const member of project.cast) {
+      if (member.personId !== personId || !member.active || member.writtenOut) continue;
+      blocks.push(...memberShootIntervals(project, member));
     }
   }
   for (const hold of state.holds) {
-    if (hold.personId !== personId) continue;
-    blocks.push({ start: absWeek(hold.start), end: absWeek(hold.end), projectId: hold.id, kind: "block" });
+    if (hold.personId !== personId || hold.kind === "pilot") continue;
+    blocks.push({
+      start: absWeek(hold.start),
+      end: absWeek(hold.end),
+      projectId: hold.projectId ?? hold.id,
+      kind: "block",
+    });
   }
   return blocks;
 }
@@ -116,6 +152,25 @@ export function scheduleConflict(
       projectId: block.projectId,
       message: `Schedule conflict: ${title} already has them from ${formatDate(fromAbs(block.start))} through ${formatDate(fromAbs(block.end))} (${phase}). An actor can only be on one project during prep and shooting.`,
     };
+  }
+  return null;
+}
+
+export function blocksConflict(
+  state: GameState,
+  personId: number,
+  blocks: { start: GameDate; weeks: number }[],
+  ignoreProjectId?: string,
+): { projectId: string; message: string } | null {
+  for (const block of blocks) {
+    const hit = scheduleConflict(
+      state,
+      personId,
+      block.start,
+      addWeeks(block.start, Math.max(1, block.weeks) - 1),
+      ignoreProjectId,
+    );
+    if (hit) return hit;
   }
   return null;
 }
@@ -262,15 +317,31 @@ const STATUS_RANK: Record<WorkStatus, number> = {
 
 export function workStatus(state: GameState, personId: number, date = state.date): PhaseView {
   const best = describeAssignment(state, personId, date);
-  const hold = activeHold(state.holds, personId, date);
+  const pilot = state.holds.find(
+    (hold) => hold.personId === personId && hold.kind === "pilot" && absWeek(hold.end) >= absWeek(date) && absWeek(hold.start) <= absWeek(date),
+  );
+  if (pilot && (best.status === "AVAILABLE" || best.status === "POST_PRODUCTION" || best.status === "AIRING")) {
+    const until = pilot.until ?? pilot.end;
+    return {
+      status: "IN_PREP",
+      progress: 40,
+      label: "On hold (pilot)",
+      detail: `Decision ${formatDate(until)}. ${pilot.reason} Gap work is allowed until the network picks the series up.`,
+      weeksRemaining: Math.max(0, absWeek(until) - absWeek(date)),
+      projectId: pilot.projectId ?? pilot.id,
+      title: pilot.reason,
+    };
+  }
+  const hold = activeHold(state.holds.filter((item) => item.kind !== "pilot"), personId, date);
   if (hold && (best.status === "AVAILABLE" || best.status === "POST_PRODUCTION" || best.status === "AIRING")) {
+    const label = hold.kind === "franchise" ? "Franchise hold" : hold.kind === "series" ? "Series lock" : "On hold";
     return {
       status: "IN_PREP",
       progress: 50,
-      label: "On hold",
+      label,
       detail: hold.reason,
       weeksRemaining: Math.max(0, absWeek(hold.end) - absWeek(date)),
-      projectId: hold.id,
+      projectId: hold.projectId ?? hold.id,
       title: hold.reason,
     };
   }
@@ -286,8 +357,43 @@ export function describeAssignment(state: GameState, personId: number, date = st
   const views: PhaseView[] = [];
   for (const project of state.projects) {
     if (project.cancelled) continue;
-    const onIt = project.cast.some((c) => c.personId === personId && c.active && !c.writtenOut);
-    if (!onIt) continue;
+    const member = project.cast.find((c) => c.personId === personId && c.active && !c.writtenOut);
+    if (!member) continue;
+    const partial = project.kind === "series" && (member.blocks?.length || member.role === "Recurring" || member.role === "Guest Star");
+    if (partial) {
+      const windows = memberShootIntervals(project, member);
+      const now = absWeek(date);
+      const current = windows.find((window) => now >= window.start && now <= window.end);
+      const upcoming = windows.find((window) => window.start > now);
+      const totalEps = member.episodes ?? project.seasons[project.seasons.length - 1]?.episodes ?? 1;
+      if (!current) {
+        if (upcoming) {
+          views.push({
+            status: "AVAILABLE",
+            progress: 0,
+            label: "Booked",
+            detail: `Next episode block ${formatDate(fromAbs(upcoming.start))}. ${totalEps} episodes on this deal, free outside the blocks.`,
+            weeksRemaining: upcoming.start - now,
+            projectId: project.id,
+            title: project.title,
+          });
+        }
+        continue;
+      }
+      const span = Math.max(1, current.end - current.start + 1);
+      const doneWeeks = now - current.start + 1;
+      const filmed = Math.min(totalEps, Math.max(1, Math.round((doneWeeks / span) * (member.blocks?.find((block) => absWeek(block.start) === current.start)?.episodes ?? totalEps))));
+      views.push({
+        status: now < absWeek(project.seasons[project.seasons.length - 1]?.shootStart ?? project.shootStart) ? "IN_PREP" : "SHOOTING",
+        progress: Math.round((doneWeeks / span) * 100),
+        label: `${filmed} of ${totalEps} episodes`,
+        detail: `${member.role} · ${project.title}`,
+        weeksRemaining: current.end - now,
+        projectId: project.id,
+        title: project.title,
+      });
+      continue;
+    }
     const view = phaseAt(project, date);
     if (view.status === "AVAILABLE" && (view.label === "Released" || view.label === "Wrapped" || view.label === "Ended")) continue;
     views.push(view);
@@ -388,5 +494,9 @@ export function shiftProjectDates(project: Project, weeks: number): void {
     season.prepStart = move(season.prepStart);
     season.shootStart = move(season.shootStart);
     season.premiere = move(season.premiere);
+  }
+  for (const member of project.cast) {
+    if (!member.blocks) continue;
+    for (const block of member.blocks) block.start = move(block.start);
   }
 }

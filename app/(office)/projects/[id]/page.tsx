@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Bars, Line } from "@/components/charts";
 import { Card, Explain, PageHeader, buttonClass } from "@/components/ui";
 import { CEREMONIES } from "@/engine/constants";
-import { formatDate, phaseAt } from "@/engine";
+import { formatDate, phaseAt, seasonCast, seriesStatus, yearsRunning } from "@/engine";
 import { campaignAction, festivalAction } from "@/lib/actions";
 import { money, viewers } from "@/lib/format";
 import { readSlot } from "@/lib/game";
@@ -22,7 +22,12 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const festivals = CEREMONIES.filter((ceremony) => ceremony.kind === "festival");
   return (
     <main>
-      <PageHeader title={project.title} lede={project.logline} />
+      <PageHeader
+        title={project.title}
+        lede={project.kind === "series"
+          ? `${project.seasons.length} season${project.seasons.length === 1 ? "" : "s"} · ${yearsRunning(project)} · ${seriesStatus(project, active.state.date)}${project.pilot && project.pilot.status !== "picked_up" ? ` · pilot decision ${formatDate(project.pilot.decision)}` : ""}`
+          : project.logline}
+      />
       {query.notice ? <p className="mb-3 rounded-2xl bg-teal-soft px-3 py-2 text-sm">{query.notice}</p> : null}
       {query.error ? <p className="mb-3 rounded-2xl bg-blush px-3 py-2 text-sm">{query.error}</p> : null}
       <div className="grid gap-4 md:grid-cols-2">
@@ -50,7 +55,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
             {project.cast.map((member) => (
               <li key={`${member.personId}${member.role}`}>
                 <Link href={`/actors/${member.personId}`} className="hover:text-teal">{member.name}</Link>
-                {" "}· {member.role} · {member.character} · {money(member.fee)}
+                {" "}· {member.role} · {member.character} · {member.episodeFee ? `${money(member.episodeFee)}/ep × ${member.episodes ?? "?"} = ${money(member.fee)}` : money(member.fee)}
+                {member.seriesDeal ? ` · ${member.seriesDeal.style} ${member.seriesDeal.seasons} seasons` : ""}
                 {member.writtenOut ? " · written out" : ""}
                 {member.isPlayerClient ? " · your client" : ""}
               </li>
@@ -64,6 +70,29 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           <p className="text-sm text-muted">Opening <Explain tip={project.resultWhy?.opening ?? ""}>{money(project.openingWeekend ?? 0)}</Explain> · Domestic {money(project.domesticTotal ?? 0)} · International {money(project.internationalTotal ?? 0)}</p>
           <Bars values={project.weeklyGross} format={(value) => money(value)} />
         </Card>
+      ) : null}
+      {project.kind === "series" && project.seasons.length > 0 ? (
+        <div className="mt-4 space-y-3">
+          <h2 className="font-serif text-2xl">Seasons</h2>
+          {project.seasons.map((item) => (
+            <Card key={item.number}>
+              <h3 className="font-serif text-xl">Season {item.number}</h3>
+              <p className="text-sm text-muted">
+                Produced {item.producedYear ?? item.shootStart.year} · released {item.releasedYear ?? item.premiere.year} · {item.episodes} episodes · {item.episodesAired} aired · {item.renewal.replaceAll("_", " ")}
+                {item.criticScore != null ? ` · critics ${item.criticScore}` : ""}
+              </p>
+              {item.viewership.length > 0 ? <p className="text-sm">Average {viewers(Math.round(item.viewership.reduce((sum, value) => sum + value, 0) / item.viewership.length))} viewers</p> : <p className="text-sm text-muted">No viewership yet.</p>}
+              <ul className="mt-2 space-y-1 text-sm">
+                {seasonCast(project, item).map((member) => (
+                  <li key={`${item.number}-${member.personId}`}>
+                    <Link href={`/actors/${member.personId}`} className="hover:text-teal">{member.name}</Link>
+                    {" "}· {member.role} · {member.episodes} episodes
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ))}
+        </div>
       ) : null}
       {season && season.viewership.length > 0 ? (
         <Card className="mt-4">

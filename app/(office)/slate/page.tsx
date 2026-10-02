@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/ui";
-import { absWeek, addWeeks, formatDate, fromAbs, phaseAt } from "@/engine";
+import { absWeek, formatDate, fromAbs, personBlocks, phaseAt } from "@/engine";
 import { readSlot } from "@/lib/game";
 
 export const dynamic = "force-dynamic";
@@ -30,15 +30,10 @@ export default async function SlatePage() {
                 <td className="sticky left-0 bg-white px-3 py-2 font-medium"><Link href={`/actors/${client.personId}`}>{client.name}</Link></td>
                 {weeks.map((week) => {
                   const abs = absWeek(week);
-                  const hit = projects.find((project) => {
-                    const on = project.cast.some((member) => member.personId === client.personId && member.active && !member.writtenOut);
-                    if (!on) return false;
-                    const windows = project.kind === "series" && project.seasons.length
-                      ? project.seasons.map((season) => [absWeek(season.prepStart), absWeek(addWeeks(season.shootStart, season.shootWeeks - 1))] as const)
-                      : [[absWeek(project.prepStart), absWeek(addWeeks(project.shootStart, project.shootWeeks - 1))] as const];
-                    return windows.some(([from, to]) => abs >= from && abs <= to);
-                  });
-                  return <td key={abs} className="px-1 py-2"><span className={`block h-6 rounded ${hit ? "bg-coral" : "bg-line/60"}`} title={hit ? hit.title : "Free"} /></td>;
+                  const blocks = personBlocks(active.state, client.personId);
+                  const hit = blocks.find((block) => abs >= block.start && abs <= block.end);
+                  const title = hit ? active.state.projects.find((project) => project.id === hit.projectId)?.title ?? "Held" : "Free";
+                  return <td key={abs} className="px-1 py-2"><span className={`block h-6 rounded ${hit ? "bg-coral" : "bg-line/60"}`} title={title} /></td>;
                 })}
               </tr>
             ))}

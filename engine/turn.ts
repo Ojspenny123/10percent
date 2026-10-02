@@ -1,4 +1,28 @@
 import { applyEventChoice, book, bumpRep, closeApproachInbox, closeInbox, pushApproach, tierBias } from "./actions";
+import {
+  backendPoints,
+  buildBlocks,
+  dealBlurb,
+  episodeQuote,
+  inPilotSeason,
+  migrateCareer,
+  offerKindBias,
+  pickDeal,
+  seriesPremium,
+  sideRng,
+  tentpoleBonuses,
+} from "./career";
+import {
+  applyStay,
+  considerFranchise,
+  offerSalt,
+  payCancellation,
+  payReleaseExtras,
+  payShootCommissions,
+  renewalMove,
+  renewalQuote,
+  resolvePilotDecisions,
+} from "./deals";
 import { BRANDS, CEREMONIES, GENRES, STAFF_INFO, STREAMERS } from "./constants";
 import { headline } from "./copy";
 import {
@@ -13,7 +37,9 @@ import {
 import { agencyTier, clamp, clientFromCatalog, expectedFee, fameFromStar, isEligible, traitHints } from "./people";
 import { chance, float, int, pick } from "./rng";
 import {
+  absWeek,
   addWeeks,
+  blocksConflict,
   cmpDate,
   formatDate,
   sameDate,
@@ -37,12 +63,14 @@ import {
 import type {
   AwardNominee,
   AwardRecord,
+  CastMember,
   Catalog,
   Client,
   GameState,
   Offer,
   Project,
   RoleType,
+  Season,
 } from "./types";
 
 export type AdvanceOptions = { stopOnEvent?: boolean; autoResolveEvents?: boolean };
@@ -94,7 +122,8 @@ function stepWeek(state: GameState, catalog: Catalog, options: AdvanceOptions): 
     }
   }
   payOverhead(state);
-  payCommissions(state);
+  payShootCommissions(state);
+  resolvePilotDecisions(state);
   resolveWraps(state);
   resolveReleases(state, catalog);
   resolveSeries(state);
@@ -110,6 +139,8 @@ function stepWeek(state: GameState, catalog: Catalog, options: AdvanceOptions): 
   writeNews(state);
   snapshotHistory(state);
   trim(state);
+  state.lastAutosave = { ...state.date };
+  migrateCareer(state);
   if (state.agency.cash < 0) {
     state.insolventWeeks += 1;
     if (state.insolventWeeks === 1 || state.insolventWeeks % 4 === 0) {
@@ -144,28 +175,8 @@ function payOverhead(state: GameState): void {
     salaries += STAFF_INFO[member.role].weekly * member.level * 4;
   }
   const total = state.agency.rent + salaries;
-  book(state, -total, "Monthly rent and salaries");
+  book(state, -total, "Monthly rent and salaries", "overhead");
   state.lastTurn.push(`Overhead ${total.toLocaleString("en-US")} left the account.`);
-}
-
-function payCommissions(state: GameState): void {
-  for (const project of state.projects) {
-    if (project.cancelled) continue;
-    const windows = project.kind === "series"
-      ? project.seasons.map((s) => s.shootStart)
-      : [project.shootStart];
-    if (!windows.some((d) => sameDate(d, state.date))) continue;
-    for (const member of project.cast) {
-      if (!member.active || member.writtenOut || !member.isPlayerClient) continue;
-      if (project.commissionsPaid.includes(member.personId)) continue;
-      const client = state.clients.find((c) => c.personId === member.personId && c.agency === "player" && c.contract);
-      if (!client?.contract) continue;
-      const commission = Math.round(member.fee * (client.contract.commission / 100));
-      book(state, commission, `Commission · ${client.name} · ${project.title}`);
-      project.commissionsPaid.push(member.personId);
-      state.lastTurn.push(`${client.name} started ${project.title}. Commission $${commission.toLocaleString("en-US")}.`);
-    }
-  }
 }
 
 function resolveWraps(state: GameState): void {
@@ -194,6 +205,8 @@ function resolveReleases(state: GameState, catalog: Catalog): void {
     }
     scoreFilm(state, project);
     updatePeopleForRelease(state, project);
+    payReleaseExtras(state, project);
+    considerFranchise(state, project);
     applyReleaseVerdict(state, project);
     const gross = project.totalGross ?? 0;
     state.news.unshift({
@@ -238,6 +251,7 @@ function maybeSequel(state: GameState, catalog: Catalog, project: Project): void
 function resolveSeries(state: GameState): void {
   for (const project of state.projects) {
     if (project.kind !== "series" || project.cancelled) continue;
+    if (project.pilot && project.pilot.status !== "picked_up") continue;
     const season = project.seasons[project.seasons.length - 1];
     if (!season || season.renewal === "cancelled") continue;
     const premiereAbs = season.premiere.year * 52 + (season.premiere.week - 1);
@@ -307,17 +321,30 @@ function resolveSeries(state: GameState): void {
         }
       }
       for (const member of project.cast) {
-        if (!member.active || member.writtenOut || !member.isPlayerClient) continue;
-        const client = state.clients.find((c) => c.personId === member.personId && c.agency === "player");
-        if (!client) continue;
-        if (client.traits.greed > 68 && (season.criticScore ?? 0) > 60) {
-          member.fee = Math.round(member.fee * 1.25);
-          inbox(state, "offer", `${client.name} exercised a raise`, `Next season of ${project.title} pays $${member.fee.toLocaleString("en-US")}. Options kept them on the show.`, `/projects/${project.id}`);
+        if (!member.active || member.writtenOut) continue;
+        const move = renewalMove(state, member, nextSeason.number);
+        if (move === "drop") {
+          member.writtenOut = true;
+          member.active = false;
+          const client = state.clients.find((c) => c.personId === member.personId && c.agency === "player");
+          if (client) inbox(state, "offer", `${client.name} is off ${project.title}`, "The studio dropped the option, or the role was not brought back.", `/projects/${project.id}`);
+          continue;
         }
+        if (move === "negotiate") {
+          member.active = false;
+          const client = state.clients.find((c) => c.personId === member.personId && c.agency === "player");
+          if (client) pushRenewal(state, project, client, member, nextSeason);
+          continue;
+        }
+        applyStay(state, project, member, nextSeason);
       }
     } else {
       project.ended = true;
-      for (const member of project.cast) member.active = false;
+      for (const member of project.cast) {
+        payCancellation(state, project, member, season.episodes);
+        member.active = false;
+      }
+      state.holds = state.holds.filter((hold) => hold.projectId !== project.id);
     }
   }
 }
@@ -554,7 +581,12 @@ function runRazzies(state: GameState, name: string): void {
 function generateWorld(state: GameState, catalog: Catalog): void {
   const exclude = new Set(playerIds(state));
   if (chance(state.rng, 0.84)) spawnFilm(state, catalog, { excludePeople: exclude });
-  if (chance(state.rng, 0.2)) spawnSeries(state, catalog, { excludePeople: exclude });
+  if (chance(state.rng, 0.2)) {
+    const before = state.projects.length;
+    spawnSeries(state, catalog, { excludePeople: exclude });
+    const created = state.projects.length > before ? state.projects[state.projects.length - 1] : undefined;
+    if (created) stampWorldSeries(state, created);
+  }
 }
 
 function generateOffers(state: GameState, catalog: Catalog): void {
@@ -567,12 +599,35 @@ function generateOffers(state: GameState, catalog: Catalog): void {
     const p = Math.min(0.8, fameP + client.stats.buzz / 350 + state.agency.reputation / 450 + agent * 0.06 + tierBias(client.fame === "Icon" ? "tentpole" : "mid") * 0);
     if (!chance(state.rng, p)) continue;
     createPlayerOffer(state, catalog, client);
+    maybeSideOffer(state, catalog, client);
+  }
+  materializeFranchises(state, catalog);
+}
+
+function withSide<T>(state: GameState, salt: number, fn: () => T): T {
+  const saved = state.rng;
+  state.rng = sideRng(state, salt);
+  try {
+    return fn();
+  } finally {
+    state.rng = saved;
   }
 }
 
-function createPlayerOffer(state: GameState, catalog: Catalog, client: Client): void {
+function maybeSideOffer(state: GameState, catalog: Catalog, client: Client): void {
+  const pending = state.offers.filter((offer) => offer.personId === client.personId && offer.status === "pending").length;
+  if (pending >= 2) return;
+  const volume = client.medium === "Both" ? 0.38 : client.medium === "TV" ? 0.16 : 0.05;
+  withSide(state, 300 + client.personId + state.date.week, () => {
+    if (!chance(state.rng, volume)) return;
+    const kind = chance(state.rng, offerKindBias(client)) ? "film" : "series";
+    createPlayerOffer(state, catalog, client, kind);
+  });
+}
+
+function createPlayerOffer(state: GameState, catalog: Catalog, client: Client, forcedKind?: "film" | "series"): void {
   const rng = state.rng;
-  const kind = client.fame === "Icon" ? "film" : chance(rng, 0.24) ? "series" : "film";
+  const kind = forcedKind ?? (client.fame === "Icon" ? "film" : chance(rng, 0.24) ? "series" : "film");
   const slot = roleForClient(rng, client, kind);
   for (let attempt = 0; attempt < 4; attempt++) {
     const total = genreTotal(state);
@@ -656,8 +711,196 @@ function pushOffer(state: GameState, project: Project, client: Client, role: Rol
     studio: project.studio,
     created: { ...state.date },
   };
+  dressOffer(state, offer, project, client, role);
   state.offers.unshift(offer);
-  inbox(state, "offer", `Offer: ${client.name} in ${project.title}`, `${role}, $${fee.toLocaleString("en-US")}, ${project.genres[0]}. Expires ${formatDate(expires)}.`, `/offers?offer=${offer.id}`, offer.id);
+  const money = offer.pay === "episode" && offer.episodeFee
+    ? `$${offer.episodeFee.toLocaleString("en-US")}/ep × ${offer.episodes} · $${offer.fee.toLocaleString("en-US")}`
+    : `$${offer.fee.toLocaleString("en-US")}`;
+  inbox(state, "offer", `Offer: ${client.name} in ${project.title}`, `${role}, ${money}, ${project.genres[0]}. Expires ${formatDate(expires)}.`, `/offers?offer=${offer.id}`, offer.id);
+}
+
+function dressOffer(state: GameState, offer: Offer, project: Project, client: Client, role: RoleType): void {
+  const quoted = offer.fee;
+  if (project.kind === "film") {
+    const scale = project.budgetTier === "tentpole" || project.budgetTier === "studio"
+      ? 0.7 + client.filmStar / 75
+      : project.budgetTier === "indie" || project.budgetTier === "micro-indie"
+        ? 0.72
+        : 1;
+    offer.fee = Math.max(5_000, Math.round((offer.fee * scale) / 1000) * 1000);
+    offer.backend = backendPoints(client.fame, project.budgetTier, client.filmStar, offer.backend);
+    offer.bonuses = tentpoleBonuses(offer.fee, project.budgetTier, client.fame);
+    offer.pay = "flat";
+    offer.feeWhy = `${offer.feeWhy} Film star power ${client.filmStar} ${scale < 1 ? "keeps prestige work cheap" : "pushes a commercial quote"}.`;
+  } else {
+    const season = project.seasons[project.seasons.length - 1];
+    if (!season) return;
+    const rng = sideRng(state, offerSalt(project.id, client.personId));
+    const pilotish = season.number === 1
+      && !offer.renewal
+      && inPilotSeason(state.date)
+      && (project.format === "ongoing_drama" || project.format === "sitcom")
+      && chance(rng, client.medium === "Film" ? 0.35 : 0.62);
+    const quote = episodeQuote({
+      fame: client.fame,
+      role,
+      medium: client.medium,
+      filmStar: client.filmStar,
+      tvStar: client.tvStar,
+      season: season.number,
+      episodes: season.episodes,
+      format: project.format,
+    });
+    if (pilotish) {
+      const pilotFee = Math.max(25_000, Math.round((quote.episodeFee * 1.35) / 1000) * 1000);
+      const deal = pickDeal(rng, role, project.format);
+      offer.pay = "pilot";
+      offer.fee = pilotFee;
+      offer.episodeFee = quote.episodeFee;
+      offer.episodes = 1;
+      offer.seasonNumber = 1;
+      offer.blocks = [{ start: { ...season.shootStart }, weeks: 2, episodes: 1 }];
+      offer.deal = deal;
+      offer.willingness = `Pilot fee, then a series option: ${dealBlurb(deal)} Option episode fee $${quote.episodeFee.toLocaleString("en-US")}.`;
+      project.origin = "pilot";
+      project.pilot = {
+        status: "awaiting",
+        decision: addWeeks(season.shootStart, 6),
+        optionSeasons: deal.seasons,
+        optionRole: role,
+        optionFee: quote.episodeFee,
+        optionEpisodes: season.episodes,
+      };
+      offer.feeWhy = `Pilot money, separate from the series option. Film-star premium on the option is ${seriesPremium(client).toFixed(2)}× a TV base.`;
+    } else {
+      const deal = pickDeal(rng, role, project.format);
+      const blocks = buildBlocks(role, season, sideRng(state, offerSalt(project.id, client.personId) + 3));
+      offer.pay = "episode";
+      offer.episodeFee = quote.episodeFee;
+      offer.episodes = quote.episodes;
+      offer.seasonNumber = season.number;
+      offer.fee = quote.total;
+      offer.deal = deal;
+      offer.blocks = blocks;
+      offer.willingness = `${quote.willingness} ${dealBlurb(deal)}`;
+      offer.feeWhy = `$${quote.episodeFee.toLocaleString("en-US")} × ${quote.episodes} episodes, season ${season.number}. ${client.medium} star power TV ${client.tvStar} / film ${client.filmStar}.`;
+      if (!project.origin) project.origin = project.format === "limited" || project.format === "miniseries" ? "limited" : "straight";
+    }
+  }
+  if (quoted > 0) offer.walkAwayFee = Math.max(offer.fee, Math.round(offer.walkAwayFee * (offer.fee / quoted)));
+}
+
+function pushRenewal(state: GameState, project: Project, client: Client, member: CastMember, season: Season): void {
+  const quote = renewalQuote(state, client, project, member, season);
+  const expires = addWeeks(state.date, 3);
+  const offer: Offer = {
+    id: nextId(state, "off"),
+    projectId: project.id,
+    personId: client.personId,
+    role: member.role,
+    character: member.character,
+    fee: quote.total,
+    billing: member.billing,
+    backend: member.backend,
+    prestige: project.prestige,
+    risk: project.risk,
+    feeWhy: `Renewal for season ${season.number}. $${quote.episodeFee.toLocaleString("en-US")} an episode.`,
+    prestigeWhy: project.genres[0] ?? "Series",
+    riskWhy: "Walking away ends the run. A long guarantee locks the calendar.",
+    scriptNote: project.scriptNote,
+    expires,
+    status: "pending",
+    walkAwayFee: Math.round(quote.total * 1.35),
+    walkAwayBackend: member.backend,
+    minBilling: member.billing,
+    dateFlexible: false,
+    perkAvailable: false,
+    perk: null,
+    dateShiftWeeks: 0,
+    studio: project.studio,
+    created: { ...state.date },
+    pay: "episode",
+    episodeFee: quote.episodeFee,
+    episodes: quote.episodes,
+    seasonNumber: season.number,
+    deal: quote.deal,
+    blocks: quote.blocks,
+    willingness: quote.willingness,
+    renewal: true,
+  };
+  state.offers.unshift(offer);
+  inbox(
+    state,
+    "offer",
+    `Renewal: ${client.name} on ${project.title}`,
+    `Season ${season.number}. $${quote.episodeFee.toLocaleString("en-US")} per episode × ${quote.episodes}. ${dealBlurb(quote.deal)} Re-sign, counter, or let them walk.`,
+    `/offers?offer=${offer.id}`,
+    offer.id,
+  );
+}
+
+function stampWorldSeries(state: GameState, project: Project): void {
+  const season = project.seasons[0];
+  if (season) {
+    season.producedYear ??= season.shootStart.year;
+    season.releasedYear ??= season.premiere.year;
+  }
+  if (project.format === "limited" || project.format === "miniseries" || project.format === "anthology") {
+    project.origin = "limited";
+    return;
+  }
+  project.origin ??= "straight";
+  if (project.openRole || !inPilotSeason(state.date)) return;
+  if (project.format !== "ongoing_drama" && project.format !== "sitcom") return;
+  const rng = sideRng(state, 17 + offerSalt(project.id, season?.episodes ?? 1));
+  if (!chance(rng, 0.5)) return;
+  project.origin = "pilot";
+  project.pilot = {
+    status: "awaiting",
+    decision: addWeeks(project.shootStart, 3),
+    optionSeasons: 3,
+    optionRole: "Series Regular",
+    optionFee: 40_000,
+    optionEpisodes: season?.episodes ?? 10,
+  };
+}
+
+function materializeFranchises(state: GameState, catalog: Catalog): void {
+  for (const client of state.clients) {
+    if (client.agency !== "player" || !client.contract) continue;
+    for (const lock of client.franchises) {
+      for (const film of lock.films) {
+        if (film.status !== "held") continue;
+        const weeksOut = absWeek(film.prep) - absWeek(state.date);
+        if (weeksOut > 16 || weeksOut < 1) continue;
+        withSide(state, 900 + client.personId + film.number, () => {
+          const project = spawnFilm(state, catalog, {
+            sequelTitle: `${lock.title}: Part ${film.number}`,
+            franchiseId: lock.id,
+            sequelNumber: film.number,
+            forceTier: "tentpole",
+            openFor: { client, role: "Lead", billing: 1 },
+            excludePeople: new Set(playerIds(state)),
+          });
+          if (!project) return;
+          if (blocksConflict(state, client.personId, [{ start: project.prepStart, weeks: Math.max(1, absWeek(shootEnd(project)) - absWeek(project.prepStart) + 1) }], project.id)) {
+            dropProject(state, project);
+            return;
+          }
+          film.status = "offered";
+          state.holds = state.holds.filter((hold) => !(hold.kind === "franchise" && hold.personId === client.personId && hold.projectId === `fr_${lock.id}_${film.number}`));
+          pushOffer(state, project, client, "Lead", 1);
+          const offer = state.offers.find((row) => row.projectId === project.id && row.status === "pending");
+          if (offer) {
+            offer.fee = film.fee;
+            offer.walkAwayFee = Math.round(film.fee * 1.2);
+            offer.pay = "flat";
+            offer.feeWhy = `Franchise film ${film.number}. The fee was agreed when ${lock.title} hit.`;
+          }
+        });
+      }
+    }
+  }
 }
 
 function generateInbound(state: GameState, catalog: Catalog): void {

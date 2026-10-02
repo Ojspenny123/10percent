@@ -23,6 +23,7 @@ export function createGame(input: { agencyName: string; era: Era; seed: number; 
     seq: 1,
     era: input.era,
     date: { year: startYear, week: 1 },
+    lastAutosave: { year: startYear, week: 1 },
     agency: {
       name,
       cash: 400_000,

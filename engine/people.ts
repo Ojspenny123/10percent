@@ -1,4 +1,5 @@
 import { ERA_START } from "./constants";
+import { applyProfile } from "./career";
 import { makeRng, next } from "./rng";
 import type {
   ActorStats,
@@ -276,6 +277,7 @@ export function clientFromCatalog(person: CatalogPerson, agency: AgencySide, dat
   const seeded = seedStats(person);
   const traits = traitsFor(person.id);
   const wins = 0;
+  const profile = applyProfile(person, date.year);
   return {
     personId: person.id,
     name: person.name,
@@ -304,5 +306,11 @@ export function clientFromCatalog(person: CatalogPerson, agency: AgencySide, dat
     studioHeat: {},
     overrides: 0,
     unhappyStreak: 0,
+    medium: profile.medium,
+    filmStar: profile.filmStar,
+    tvStar: profile.tvStar,
+    filmPrestige: profile.filmPrestige,
+    tvPrestige: profile.tvPrestige,
+    franchises: [],
   };
 }

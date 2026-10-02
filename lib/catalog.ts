@@ -44,6 +44,8 @@ export function toCatalogPerson(row: {
   avgRating: number;
   genreMix: unknown;
   knownFor: unknown;
+  movieCredits?: unknown;
+  tvCredits?: unknown;
 }): CatalogPerson {
   return {
     id: row.tmdbId,
@@ -60,6 +62,32 @@ export function toCatalogPerson(row: {
     avgRating: row.avgRating,
     genreMix: mix(row.genreMix),
     knownFor: credits(row.knownFor),
+    movieCredits: side(row.movieCredits),
+    tvCredits: side(row.tvCredits),
+  };
+}
+
+function side(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const row = value as Record<string, unknown>;
+  const count = typeof row.count === "number" ? row.count : 0;
+  if (!count) return undefined;
+  const titles = Array.isArray(row.titles)
+    ? row.titles.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const credit = item as Record<string, unknown>;
+        return [{
+          title: typeof credit.title === "string" ? credit.title : "",
+          year: typeof credit.year === "string" ? credit.year : "",
+          rating: typeof credit.rating === "number" ? credit.rating : 0,
+        }];
+      })
+    : [];
+  return {
+    count,
+    avgRating: typeof row.avgRating === "number" ? row.avgRating : 0,
+    recent: typeof row.recent === "number" ? row.recent : 0,
+    titles,
   };
 }
 

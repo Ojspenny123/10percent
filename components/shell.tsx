@@ -20,6 +20,7 @@ const NAV = [
     ["/agency", "Agency"],
   ]],
   ["Industry", [
+    ["/series", "Series"],
     ["/charts", "Charts"],
     ["/awards", "Awards"],
     ["/news", "News"],
@@ -28,7 +29,7 @@ const NAV = [
   ]],
 ] as const;
 
-export function Shell({ state, savedAt, version, children }: { state: GameState; savedAt: string; version: number; children: React.ReactNode }) {
+export function Shell({ state, version, children }: { state: GameState; version: number; children: React.ReactNode }) {
   const unread = state.inbox.filter((item) => !item.read && !item.resolved).length;
   return (
     <div className="min-h-screen md:grid md:grid-cols-[240px_minmax(0,1fr)]">
@@ -71,8 +72,8 @@ export function Shell({ state, savedAt, version, children }: { state: GameState;
         </nav>
       </aside>
       <div className="min-w-0 px-4 py-6 sm:px-8">
-        <Suspense fallback={<p className="mb-4 text-sm text-muted">Saved</p>}>
-          <SaveStatus savedAt={savedAt} version={version} />
+        <Suspense fallback={<p className="mb-4 text-xs text-muted">Last saved: {formatDate(state.lastAutosave ?? state.date)}</p>}>
+          <SaveStatus lastSaved={formatDate(state.lastAutosave ?? state.date)} version={version} />
         </Suspense>
         {children}
       </div>

@@ -3,7 +3,7 @@ import { brandAction, staffAction } from "@/lib/actions";
 import { Card, Explain, PageHeader, buttonClass } from "@/components/ui";
 import { STAFF_INFO } from "@/engine/constants";
 import { formatDate } from "@/engine";
-import type { StaffRole } from "@/engine/types";
+import type { LedgerBucket, StaffRole } from "@/engine/types";
 import { money } from "@/lib/format";
 import { readSlot } from "@/lib/game";
 
@@ -25,7 +25,7 @@ export default async function AgencyPage({ searchParams }: { searchParams: Promi
       {query.error ? <p className="mb-3 rounded-2xl bg-blush px-3 py-2 text-sm">{query.error}</p> : null}
       {state.insolventWeeks > 0 ? <p className="mb-3 rounded-2xl bg-blush px-3 py-2 text-sm">Cash is negative. Hiring is still possible only if a deal covers it. Income shows up when clients shoot.</p> : null}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Card><p className="text-sm text-muted">Cash</p><p className="font-serif text-3xl"><Explain tip="Opening cash was $400,000. Commission is a percent of the client fee, paid at the start of photography.">{money(state.agency.cash)}</Explain></p></Card>
+        <Card><p className="text-sm text-muted">Cash</p><p className="font-serif text-3xl"><Explain tip="Opening cash was $400,000. Film commission lands when photography starts. Series commission lands per episode across the shoot.">{money(state.agency.cash)}</Explain></p></Card>
         <Card><p className="text-sm text-muted">Recent commission</p><p className="font-serif text-3xl">{money(monthlyPay)}</p></Card>
         <Card><p className="text-sm text-muted">Monthly overhead</p><p className="font-serif text-3xl"><Explain tip="Rent plus four weeks of salaries, charged every fourth week.">{money(monthlyCost)}</Explain></p></Card>
       </div>
@@ -65,6 +65,13 @@ export default async function AgencyPage({ searchParams }: { searchParams: Promi
           </Card>
         ))}
         {state.brandDeals.length === 0 ? <p className="text-sm text-muted">Brand work shows up when a client is marketable enough.</p> : null}
+      </div>
+      <h2 className="mb-3 mt-8 font-serif text-2xl">Income</h2>
+      <div className="grid gap-3 sm:grid-cols-4">
+        {(["film", "series", "pilot", "bonus"] as LedgerBucket[]).map((bucket) => {
+          const total = state.ledger.filter((entry) => (entry.bucket ?? "other") === bucket && entry.amount > 0).reduce((sum, entry) => sum + entry.amount, 0);
+          return <Card key={bucket}><p className="text-sm capitalize text-muted">{bucket}</p><p className="font-serif text-2xl">{money(total)}</p></Card>;
+        })}
       </div>
       <h2 className="mb-3 mt-8 font-serif text-2xl">Ledger</h2>
       <ul className="space-y-1 text-sm">

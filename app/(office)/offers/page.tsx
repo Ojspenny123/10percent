@@ -17,7 +17,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const selected = (params.offer ? active.state.offers.find((offer) => offer.id === params.offer) : undefined) ?? offers[0];
   const project = selected ? active.state.projects.find((item) => item.id === selected.projectId) : undefined;
   const client = selected ? active.state.clients.find((item) => item.personId === selected.personId) : undefined;
-  const conflict = selected && project && client ? pendingConflictMessage(active.state, client.personId, project) : null;
+  const conflict = selected && project && client ? pendingConflictMessage(active.state, client.personId, project, selected.blocks) : null;
   return (
     <main>
       <PageHeader title="Offers" lede="Studios send these about a specific client. A greedy counter can kill the deal. The actor can still say no." />
@@ -37,7 +37,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                 <li key={offer.id}>
                   <Link href={`/offers?status=${status}&offer=${offer.id}`} className={`block rounded-2xl border px-4 py-3 ${selected?.id === offer.id ? "border-teal bg-teal-soft" : "border-line bg-white"}`}>
                     <p className="font-medium">{title}</p>
-                    <p className="text-sm text-muted">{who} · {offer.role} · {money(offer.fee)}</p>
+                    <p className="text-sm text-muted">{who} · {offer.role} · {offer.pay === "episode" && offer.episodeFee ? `${money(offer.episodeFee)}/ep` : money(offer.fee)}{offer.pay === "pilot" ? " · pilot" : ""}</p>
                   </Link>
                 </li>
               );
@@ -56,7 +56,9 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                 <div><dt className="text-muted">Studio</dt><dd>{project.studio}</dd></div>
                 <div><dt className="text-muted">Shoot</dt><dd>{formatDate(project.shootStart)} · {project.shootWeeks} weeks</dd></div>
                 <div><dt className="text-muted">Prep</dt><dd>{formatDate(project.prepStart)}</dd></div>
-                <div><dt className="text-muted">Fee</dt><dd><Explain tip={selected.feeWhy}>{money(selected.fee)}</Explain></dd></div>
+                <div><dt className="text-muted">Fee</dt><dd><Explain tip={selected.feeWhy}>{selected.pay === "episode" && selected.episodeFee ? `${money(selected.episodeFee)} × ${selected.episodes} eps = ${money(selected.fee)}` : money(selected.fee)}</Explain></dd></div>
+                {selected.seasonNumber ? <div><dt className="text-muted">Season</dt><dd>{selected.seasonNumber}{selected.renewal ? " · renewal" : ""}</dd></div> : null}
+                {selected.deal ? <div className="col-span-2"><dt className="text-muted">Deal</dt><dd>{selected.deal.style} · {selected.deal.seasons} season{selected.deal.seasons === 1 ? "" : "s"} · {Math.round(selected.deal.annualBump * 100)}% a year</dd></div> : null}
                 <div><dt className="text-muted">Billing</dt><dd>{billingLabel(selected.billing)}</dd></div>
                 <div><dt className="text-muted">Backend</dt><dd>{selected.backend} pts</dd></div>
                 <div><dt className="text-muted">Prestige</dt><dd><Explain tip={selected.prestigeWhy}>{selected.prestige}</Explain></dd></div>
@@ -64,6 +66,9 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                 <div><dt className="text-muted">Expires</dt><dd>{formatDate(selected.expires)}</dd></div>
               </dl>
               <p className="mt-3 text-sm">{selected.scriptNote}</p>
+              {selected.willingness ? <p className="mt-2 text-sm text-muted">{selected.willingness}</p> : null}
+              {selected.bonuses?.length ? <p className="mt-2 text-sm">Box office bonuses: {selected.bonuses.map((bonus) => `${bonus.multiple}x budget ${money(bonus.amount)}`).join(", ")}. Backend {selected.backend} pts.</p> : null}
+              {selected.blocks?.length ? <p className="mt-2 text-sm">Calendar: {selected.blocks.map((block) => `${formatDate(block.start)} · ${block.weeks} weeks · ${block.episodes} eps`).join("; ")}</p> : null}
               {conflict ? <p className="mt-3 rounded-xl bg-blush px-3 py-2 text-sm">{conflict}</p> : null}
               {params.warn ? (
                 <form action={acceptOfferAction} className="mt-3">

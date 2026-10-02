@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Portrait } from "@/components/portrait";
-import { PageHeader, buttonClass } from "@/components/ui";
-import { ageOn, fameFromStar, isEligible, preferredGenres, seedStats } from "@/engine";
+import { MediumMark, PageHeader, buttonClass } from "@/components/ui";
+import { ageOn, applyProfile, fameFromStar, isEligible, preferredGenres, seedStats } from "@/engine";
 import { signAction } from "@/lib/actions";
 import { loadCatalog } from "@/lib/catalog";
 import { readSlot } from "@/lib/game";
@@ -33,6 +33,9 @@ export default async function TalentPage({ searchParams }: { searchParams: Promi
         age,
         agency: client?.agency ?? "unsigned",
         rival: client?.rivalId ?? null,
+        profile: client
+          ? { medium: client.medium, filmStar: client.filmStar, tvStar: client.tvStar }
+          : applyProfile(actor, active.state.date.year),
       };
     })
     .filter((row) => {
@@ -41,6 +44,7 @@ export default async function TalentPage({ searchParams }: { searchParams: Promi
       if (params.nationality && row.actor.nationality !== params.nationality) return false;
       if (params.genre && !row.genres.includes(params.genre)) return false;
       if (params.fame && row.fame !== params.fame) return false;
+      if (params.medium && row.profile.medium !== params.medium) return false;
       if (params.agency === "player" && row.agency !== "player") return false;
       if (params.agency === "rival" && row.agency !== "rival") return false;
       if (params.agency === "unsigned" && row.agency !== "unsigned") return false;
@@ -80,6 +84,12 @@ export default async function TalentPage({ searchParams }: { searchParams: Promi
           <option value="">Any fame</option>
           {["Unknown", "Working", "Known", "A-list", "Icon"].map((fame) => <option key={fame}>{fame}</option>)}
         </select>
+        <select name="medium" defaultValue={params.medium || ""} className="rounded-xl border border-line px-3 py-2" aria-label="Medium">
+          <option value="">Film, TV, or both</option>
+          <option>Film</option>
+          <option>TV</option>
+          <option>Both</option>
+        </select>
         <select name="agency" defaultValue={params.agency || ""} className="rounded-xl border border-line px-3 py-2" aria-label="Agency">
           <option value="">Any agency</option>
           <option value="unsigned">Unsigned</option>
@@ -108,6 +118,7 @@ export default async function TalentPage({ searchParams }: { searchParams: Promi
                 {row.agency === "rival" ? <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs text-gold">Rival</span> : null}
               </div>
               <p className="text-xs text-muted">{row.fame} · {genderLabel(row.actor.gender)} · {row.age ?? "?"} · {row.actor.nationality ?? "Unknown"}</p>
+              <MediumMark medium={row.profile.medium} film={row.profile.filmStar} tv={row.profile.tvStar} />
               <p className="text-xs text-muted">{row.genres.join(", ") || "Genre mix still thin"}</p>
               {row.agency !== "player" ? (
                 <form action={signAction} className="space-y-2 text-xs">

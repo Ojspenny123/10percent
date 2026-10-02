@@ -375,6 +375,8 @@ export function startNextSeason(state: GameState, project: Project, shorter: boo
     viewership: [],
     renewal: "pending",
     reviews: [],
+    producedYear: prepStart.year,
+    releasedYear: premiere.year,
   };
   project.seasons.push(season);
   project.prepStart = prepStart;

@@ -15,7 +15,7 @@ export default async function GamePage({ searchParams }: { searchParams: Promise
   const now = Date.now();
   return (
     <main>
-      <PageHeader title="Game" lede="Autosave writes to the open slot after every week and every major decision. The other slots stay where you left them." />
+      <PageHeader title="Game" lede="The open slot is written once each in-game week. Save now is here if you want a copy before then. The other slots stay where you left them." />
       <FlashBanner notice={params.notice} error={params.error} />
       <div className="mb-6 flex flex-wrap gap-2">
         <form action={saveNowAction}>

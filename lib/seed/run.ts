@@ -362,7 +362,7 @@ async function hydratePeople(limit: number): Promise<void> {
     return;
   }
   await mapPool(queue, 6, async (candidate) => {
-    const detail = await tmdb(`/person/${candidate.tmdbId}?append_to_response=combined_credits`);
+    const detail = await tmdb(`/person/${candidate.tmdbId}?append_to_response=combined_credits,movie_credits,tv_credits`);
     const credits = (detail.combined_credits ?? {}) as { cast?: unknown[]; crew?: unknown[] };
     const cast = asArray(credits.cast);
     const crew = asArray(credits.crew);
@@ -424,6 +424,8 @@ async function hydratePeople(limit: number): Promise<void> {
         avgRating,
         genreMix: mix,
         knownFor: json(filmography.slice(0, 12).map(({ title, year, character, rating, mediaType }) => ({ title, year, character, rating, mediaType }))),
+        movieCredits: json(creditSide(detail.movie_credits, acting)),
+        tvCredits: json(creditSide(detail.tv_credits, acting)),
         hydrated: true,
       },
       create: {
@@ -441,6 +443,8 @@ async function hydratePeople(limit: number): Promise<void> {
         avgRating,
         genreMix: mix,
         knownFor: json(filmography.slice(0, 12).map(({ title, year, character, rating, mediaType }) => ({ title, year, character, rating, mediaType }))),
+        movieCredits: json(creditSide(detail.movie_credits, acting)),
+        tvCredits: json(creditSide(detail.tv_credits, acting)),
         hydrated: true,
       },
     });
@@ -471,6 +475,30 @@ async function mapPool<T>(items: T[], concurrency: number, worker: (item: T) => 
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => run()));
+}
+
+function creditSide(value: unknown, acting: boolean) {
+  const bag = (value ?? {}) as { cast?: unknown; crew?: unknown };
+  const rows = acting
+    ? asArray(bag.cast)
+    : asArray(bag.crew).filter((row) => stringOf(row.job) === "Director" || stringOf(row.department) === "Directing");
+  const rated = rows.map((row) => numberOf(row.vote_average) ?? 0).filter((rating) => rating > 0);
+  const avg = rated.length ? rated.reduce((sum, rating) => sum + rating, 0) / rated.length : 0;
+  const yearNow = new Date().getFullYear();
+  const recent = rows.filter((row) => {
+    const year = Number(yearOf(row.release_date) || yearOf(row.first_air_date));
+    return Number.isFinite(year) && yearNow - year <= 12;
+  }).length;
+  return {
+    count: rows.length,
+    avgRating: avg,
+    recent,
+    titles: rows.slice(0, 8).map((row) => ({
+      title: stringOf(row.title) || stringOf(row.name) || "Untitled",
+      year: yearOf(row.release_date) || yearOf(row.first_air_date),
+      rating: numberOf(row.vote_average) ?? 0,
+    })),
+  };
 }
 
 function asArray(value: unknown): Record<string, unknown>[] {

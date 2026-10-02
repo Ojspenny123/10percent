@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Portrait } from "@/components/portrait";
-import { Card, Explain, MoodDot, PageHeader, Progress, StatBar, StatusBadge, buttonClass } from "@/components/ui";
-import { ageOn, describeAssignment, formatDate, phaseAt, preferenceLabel } from "@/engine";
+import { Card, Explain, MediumMark, MoodDot, PageHeader, Progress, StatBar, StatusBadge, buttonClass } from "@/components/ui";
+import { ageOn, filmHistory, formatDate, personBlocks, phaseAt, preferenceLabel, seriesHistory, workStatus } from "@/engine";
+import { money } from "@/lib/format";
 import { genderLabel } from "@/engine/people";
-import { absWeek, addWeeks, contractEnd } from "@/engine/schedule";
+import { absWeek, contractEnd } from "@/engine/schedule";
 import { releaseAction, renewAction, signAction } from "@/lib/actions";
 import { loadCatalog } from "@/lib/catalog";
 import { readSlot } from "@/lib/game";
@@ -23,7 +24,7 @@ export default async function ActorPage({ params, searchParams }: { params: Prom
   if (!person && !client) notFound();
   const name = client?.name ?? person?.name ?? "Actor";
   const tab = query.tab || "overview";
-  const work = describeAssignment(active.state, personId);
+  const work = workStatus(active.state, personId);
   const projects = active.state.projects.filter((project) => project.cast.some((member) => member.personId === personId && !member.writtenOut) || project.openRole?.forPersonId === personId);
   const age = ageOn(client?.birthday ?? person?.birthday ?? null, active.state.date);
   return (
@@ -36,6 +37,7 @@ export default async function ActorPage({ params, searchParams }: { params: Prom
           <div className="mt-3 flex flex-wrap gap-2">
             <StatusBadge status={work.status} />
             {client?.agency === "player" ? <span className="rounded-full bg-teal-soft px-2.5 py-1 text-xs text-teal-dark">Signed</span> : null}
+            {client ? <MediumMark medium={client.medium} film={client.filmStar} tv={client.tvStar} /> : null}
           </div>
         </div>
         <div>
@@ -61,9 +63,9 @@ export default async function ActorPage({ params, searchParams }: { params: Prom
             ))}
           </nav>
           <div className="mt-5">
-            {tab === "overview" && client ? <Overview client={client} /> : null}
+            {tab === "overview" && client ? <Overview client={client} state={active.state} /> : null}
             {tab === "overview" && (!client || client.agency !== "player") ? <div className="mt-4"><Unsigned personId={personId} name={name} /></div> : null}
-            {tab === "schedule" ? <Schedule stateDate={active.state.date} projects={projects} personId={personId} /> : null}
+            {tab === "schedule" ? <Schedule state={active.state} projects={projects} personId={personId} /> : null}
             {tab === "verdicts" ? <Verdicts client={client} /> : null}
             {tab === "credits" ? <Credits client={client} person={person} projects={projects} personId={personId} /> : null}
             {tab === "contract" ? <Contract client={client} personId={personId} date={active.state.date} /> : null}
@@ -75,7 +77,9 @@ export default async function ActorPage({ params, searchParams }: { params: Prom
   );
 }
 
-function Overview({ client }: { client: NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"]["clients"][number] }) {
+function Overview({ client, state }: { client: NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"]["clients"][number]; state: NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"] }) {
+  const pilot = state.projects.find((project) => project.pilot && (project.pilot.status === "awaiting" || project.pilot.status === "retooled" || project.pilot.status === "shooting") && project.cast.some((member) => member.personId === client.personId && member.active));
+  const holds = state.holds.filter((hold) => hold.personId === client.personId);
   const hints = client.revealedHints.length ? client.revealedHints : ["Nothing revealed yet. A scout, or a finished job, will surface a hint. They are not shown as numbers."];
   const max = Math.max(...client.history.map((point) => point.score), 1);
   return (
@@ -87,6 +91,8 @@ function Overview({ client }: { client: NonNullable<Awaited<ReturnType<typeof re
         <StatBar label="Range" value={client.stats.range} tip={client.statWhy.range} />
         <StatBar label="Buzz" value={client.stats.buzz} tip={client.statWhy.buzz} />
         <StatBar label="Reputation" value={client.stats.reputation} tip={client.statWhy.reputation} />
+        <StatBar label="Film star power" value={client.filmStar} tip={`Prestige in film ${client.filmPrestige}. TV stars need a breakout before this climbs.`} />
+        <StatBar label="TV star power" value={client.tvStar} tip={`Prestige on television ${client.tvPrestige}.`} />
       </Card>
       <div className="space-y-4">
         <Card>
@@ -101,6 +107,40 @@ function Overview({ client }: { client: NonNullable<Awaited<ReturnType<typeof re
           </svg>
           <p className="text-xs text-muted">Preferred genres: {client.preferredGenres.join(", ") || "—"}. Loyalty {client.loyalty}, shown because it is the relationship, not a hidden trait.</p>
         </Card>
+        {pilot?.pilot ? (
+          <Card>
+            <h2 className="font-serif text-xl">Pilot — awaiting decision</h2>
+            <p className="mt-1 text-sm"><Link href={`/projects/${pilot.id}`} className="hover:text-teal">{pilot.title}</Link></p>
+            <p className="text-sm text-muted">Decision {formatDate(pilot.pilot.decision)}. Option: {pilot.pilot.optionRole}, ${pilot.pilot.optionFee.toLocaleString("en-US")} an episode, {pilot.pilot.optionSeasons} seasons.</p>
+          </Card>
+        ) : null}
+        {holds.length ? (
+          <Card>
+            <h2 className="font-serif text-xl">Holds</h2>
+            <ul className="mt-2 space-y-1 text-sm">
+              {holds.map((hold) => (
+                <li key={hold.id}>{hold.kind === "pilot" ? "On hold (pilot)" : hold.kind === "franchise" ? "Franchise" : hold.kind === "series" ? "Series lock" : "Personal"} · {hold.reason} · {formatDate(hold.start)} to {formatDate(hold.until ?? hold.end)}</li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
+        {client.franchises.length ? (
+          <Card>
+            <h2 className="font-serif text-xl">Franchise deals</h2>
+            <ul className="mt-2 space-y-2 text-sm">
+              {client.franchises.map((lock) => (
+                <li key={lock.id}>
+                  <p className="font-medium">{lock.title}</p>
+                  <ul>
+                    {lock.films.map((film) => (
+                      <li key={film.number}>Film {film.number} · {formatDate(film.prep)} · {money(film.fee)} · {film.status}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
       </div>
     </div>
   );
@@ -123,12 +163,10 @@ function Unsigned({ personId, name }: { personId: number; name: string }) {
   );
 }
 
-function Schedule({ stateDate, projects, personId }: { stateDate: { year: number; week: number }; projects: NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"]["projects"]; personId: number }) {
+function Schedule({ state, projects, personId }: { state: NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"]; projects: NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"]["projects"]; personId: number }) {
+  const stateDate = state.date;
   const rows = projects.map((project) => ({ project, phase: phaseAt(project, stateDate) })).sort((a, b) => absWeek(a.project.prepStart) - absWeek(b.project.prepStart));
-  const blocked = rows.flatMap(({ project }) => {
-    if (project.kind === "series") return project.seasons.map((season) => ({ start: absWeek(season.prepStart), end: absWeek(addWeeks(season.shootStart, season.shootWeeks - 1)), title: project.title }));
-    return [{ start: absWeek(project.prepStart), end: absWeek(addWeeks(project.shootStart, project.shootWeeks - 1)), title: project.title }];
-  });
+  const blocked = personBlocks(state, personId).map((block) => ({ start: block.start, end: block.end, title: state.projects.find((project) => project.id === block.projectId)?.title ?? "Hold" }));
   const gaps: string[] = [];
   let cursor = absWeek(stateDate);
   const horizon = cursor + 36;
@@ -154,6 +192,9 @@ function Schedule({ stateDate, projects, personId }: { stateDate: { year: number
           <p className="text-sm text-muted">{project.kind === "film" ? "Film" : project.format} · {phase.label}</p>
           <p className="text-sm">Prep {formatDate(project.prepStart)} · Shoot {formatDate(project.shootStart)} · {project.kind === "film" ? "Release" : "Premiere"} {formatDate(project.release)}</p>
           <p className="text-xs text-muted">{project.cast.find((member) => member.personId === personId)?.role} as {project.cast.find((member) => member.personId === personId)?.character}</p>
+          {(project.cast.find((member) => member.personId === personId)?.blocks ?? []).map((block, index) => (
+            <p key={index} className="text-xs text-muted">Block {formatDate(block.start)} · {block.weeks} weeks · {block.episodes} episodes</p>
+          ))}
           {phase.status !== "AVAILABLE" ? <Progress value={phase.progress} /> : null}
         </Card>
       ))}
@@ -188,6 +229,8 @@ function Verdicts({ client }: { client: NonNullable<Awaited<ReturnType<typeof re
 
 function Credits({ client, person, projects, personId }: { client: NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"]["clients"][number] | undefined; person: { knownFor: { title: string; year: string; character: string; rating: number; mediaType: string }[] } | undefined; projects: NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"]["projects"]; personId: number }) {
   const real = client?.realCredits ?? person?.knownFor ?? [];
+  const series = client ? seriesHistory({ projects } as NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"], personId) : [];
+  const films = client ? filmHistory({ projects } as NonNullable<Awaited<ReturnType<typeof readSlot>>>["state"], personId) : [];
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card>
@@ -199,13 +242,25 @@ function Credits({ client, person, projects, personId }: { client: NonNullable<A
         </ul>
       </Card>
       <Card>
-        <h2 className="font-serif text-xl">With you</h2>
+        <h2 className="font-serif text-xl">Series history</h2>
         <ul className="mt-3 space-y-2 text-sm">
-          {projects.map((project) => {
-            const member = project.cast.find((row) => row.personId === personId);
-            return <li key={project.id}><Link href={`/projects/${project.id}`} className="hover:text-teal">{project.title}</Link> · {member?.role} · {project.genres[0]}</li>;
-          })}
-          {projects.length === 0 ? <li className="text-muted">No fictional credits yet.</li> : null}
+          {series.map((row) => (
+            <li key={row.projectId}>
+              <Link href={`/projects/${row.projectId}`} className="hover:text-teal">{row.title}</Link>
+              {" "}· {row.role} · {row.seasons} · {row.years} · {row.episodes} episodes · {money(row.earnings)}
+            </li>
+          ))}
+          {series.length === 0 ? <li className="text-muted">No series yet.</li> : null}
+        </ul>
+        <h2 className="mt-4 font-serif text-xl">Film credits</h2>
+        <ul className="mt-3 space-y-2 text-sm">
+          {films.map((row) => (
+            <li key={row.projectId}>
+              <Link href={`/projects/${row.projectId}`} className="hover:text-teal">{row.year} · {row.title}</Link>
+              {" "}· {row.role}{row.gross != null ? ` · ${money(row.gross)}` : ""}{row.critic != null ? ` · critics ${row.critic}` : ""}
+            </li>
+          ))}
+          {films.length === 0 ? <li className="text-muted">No films yet.</li> : null}
         </ul>
       </Card>
     </div>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Portrait } from "@/components/portrait";
-import { Empty, MoodDot, PageHeader, Progress, StatusBadge } from "@/components/ui";
-import { absWeek, clientAttention, contractEnd, describeAssignment } from "@/engine";
+import { Empty, MediumMark, MoodDot, PageHeader, Progress, StatusBadge } from "@/components/ui";
+import { absWeek, clientAttention, contractEnd, workStatus } from "@/engine";
 import type { Client, FameTier, Mood, WorkStatus } from "@/engine/types";
 import { readSlot } from "@/lib/game";
 import { redirect } from "next/navigation";
@@ -19,12 +19,13 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
   const view = params.view === "list" ? "list" : "grid";
   const clients = active.state.clients
     .filter((client) => client.agency === "player")
-    .map((client) => ({ client, work: describeAssignment(active.state, client.personId), flags: clientAttention(active.state, client) }))
+    .map((client) => ({ client, work: workStatus(active.state, client.personId), flags: clientAttention(active.state, client) }))
     .filter(({ client, work }) => {
       if (params.status && work.status !== params.status) return false;
       if (params.fame && client.fame !== params.fame) return false;
       if (params.mood && client.mood !== params.mood) return false;
       if (params.genre && !client.preferredGenres.includes(params.genre)) return false;
+      if (params.medium && client.medium !== params.medium) return false;
       if (params.expiring === "1") {
         const end = contractEnd(client);
         if (!end) return false;
@@ -64,6 +65,12 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
           <option value="">Any mood</option>
           {MOODS.map((mood) => <option key={mood}>{mood}</option>)}
         </select>
+        <select name="medium" defaultValue={params.medium || ""} className="rounded-full border border-line bg-white px-3 py-2" aria-label="Medium">
+          <option value="">Film or TV</option>
+          <option>Film</option>
+          <option>TV</option>
+          <option>Both</option>
+        </select>
         <select name="genre" defaultValue={params.genre || ""} className="rounded-full border border-line bg-white px-3 py-2" aria-label="Genre">
           <option value="">Any genre</option>
           {genres.map((genre) => <option key={genre}>{genre}</option>)}
@@ -96,6 +103,7 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
                     <StatusBadge status={work.status} />
                   </div>
                   <p className="text-xs text-muted">{client.fame}</p>
+                  <MediumMark medium={client.medium} film={client.filmStar} tv={client.tvStar} />
                   <MoodDot mood={client.mood} />
                   {work.title && work.status !== "AVAILABLE" ? (
                     <div>
@@ -117,6 +125,7 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
               <tr>
                 <th className="px-3 py-2">Client</th>
                 <th className="px-3 py-2">Fame</th>
+                <th className="px-3 py-2">Medium</th>
                 <th className="px-3 py-2">Mood</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Project</th>
@@ -128,6 +137,7 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
                 <tr key={client.personId} className="border-b border-line last:border-0">
                   <td className="px-3 py-2"><Link href={`/actors/${client.personId}`} className="font-medium hover:text-teal">{client.name}</Link></td>
                   <td className="px-3 py-2">{client.fame}</td>
+                  <td className="px-3 py-2"><MediumMark medium={client.medium} film={client.filmStar} tv={client.tvStar} /></td>
                   <td className="px-3 py-2"><MoodDot mood={client.mood} /></td>
                   <td className="px-3 py-2"><StatusBadge status={work.status} /></td>
                   <td className="px-3 py-2">{work.title ? `${work.title} · ${work.label}` : "—"}</td>

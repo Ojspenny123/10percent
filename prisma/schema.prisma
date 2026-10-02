@@ -47,6 +47,8 @@ model Person {
   avgRating    Float    @default(0)
   genreMix     Json
   knownFor     Json
+  movieCredits Json?
+  tvCredits    Json?
   hydrated     Boolean  @default(false)
   updatedAt    DateTime @updatedAt
 

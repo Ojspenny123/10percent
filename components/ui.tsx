@@ -56,6 +56,17 @@ const STATUS_STYLE: Record<WorkStatus, string> = {
   AIRING: "bg-teal-soft text-teal-dark",
 };
 
+export function MediumMark({ medium, film, tv }: { medium?: string; film?: number; tv?: number }) {
+  if (!medium) return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1 text-xs">
+      <span className="rounded-full bg-ink px-2 py-0.5 font-medium text-white">{medium}</span>
+      {film != null ? <span className="text-muted">Film {film}</span> : null}
+      {tv != null ? <span className="text-muted">TV {tv}</span> : null}
+    </span>
+  );
+}
+
 export function StatusBadge({ status }: { status: WorkStatus }) {
   const label = status === "IN_PREP" ? "In prep" : status === "POST_PRODUCTION" ? "Post-production" : status === "SHOOTING" ? "Shooting" : status === "AIRING" ? "Airing" : "Available";
   return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[status]}`}>{label}</span>;
