@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function OffersPage({ searchParams }: { searchParams: Promise<{ offer?: string; notice?: string; error?: string; warn?: string; status?: string }> }) {
+export default async function OffersPage({ searchParams }: { searchParams: Promise<{ offer?: string; notice?: string; error?: string; warn?: string; saveError?: string; status?: string }> }) {
   const params = await searchParams;
   const active = await readSlot();
   if (!active) redirect("/");
@@ -21,7 +21,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   return (
     <main>
       <PageHeader title="Offers" lede="Studios send these about a specific client. A greedy counter can kill the deal. The actor can still say no." />
-      <FlashBanner notice={params.notice} error={params.error} warn={params.warn} />
+      <FlashBanner notice={params.notice} error={params.error || params.saveError} warn={params.warn} />
       <div className="mb-4 flex gap-3 text-sm">
         {["pending", "accepted", "declined", "expired", "killed", "actor_refused", "all"].map((item) => (
           <Link key={item} href={`/offers?status=${item}`} className={status === item ? "font-medium text-coral-dark" : "text-muted"}>{item.replace("_", " ")}</Link>

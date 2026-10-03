@@ -12,19 +12,7 @@ export function SaveStatus({ lastSaved, version }: { lastSaved: string; version:
   const saveKind = params.get("saveKind") || "";
 
   useEffect(() => {
-    const onSubmit = (event: Event) => {
-      const form = event.target;
-      if (!(form instanceof HTMLFormElement)) return;
-      if (!form.querySelector("[name=version]")) {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = "version";
-        input.value = String(version);
-        form.appendChild(input);
-      }
-    };
-    document.addEventListener("submit", onSubmit, true);
-    return () => document.removeEventListener("submit", onSubmit, true);
+    (window as Window & { __TEN_VERSION?: string }).__TEN_VERSION = String(version);
   }, [version]);
 
   return (

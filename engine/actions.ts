@@ -219,6 +219,51 @@ export function acceptOffer(input: GameState, offerId: string, confirm = false):
   return { state, ok: true, message: `${client.name} is attached to ${project.title} as ${offer.role}.` };
 }
 
+export function dismissDecision(input: GameState, id: string): ActionResult {
+  const state = clone(input);
+  let found = false;
+  for (const event of state.events ?? []) {
+    if (event.id === id && !event.resolved) {
+      event.resolved = "dismissed";
+      found = true;
+    }
+  }
+  for (const offer of state.offers ?? []) {
+    if (offer.id === id && offer.status === "pending") {
+      offer.status = "declined";
+      closeInbox(state, offer.id);
+      found = true;
+    }
+  }
+  for (const approach of state.approaches ?? []) {
+    if (approach.id === id && approach.status === "pending") {
+      approach.status = "expired";
+      closeApproachInbox(state, approach);
+      found = true;
+    }
+  }
+  for (const deal of state.brandDeals ?? []) {
+    if (deal.id === id && deal.status === "offered") {
+      deal.status = "declined";
+      found = true;
+    }
+  }
+  for (const invite of state.talkInvites ?? []) {
+    if (invite.id === id && invite.status === "pending") {
+      invite.status = "declined";
+      found = true;
+    }
+  }
+  for (const item of state.inbox ?? []) {
+    if (!item.resolved && (item.id === id || item.refId === id)) {
+      item.resolved = true;
+      found = true;
+    }
+  }
+  if (!found) return { state, ok: true, message: "That item was already clear." };
+  return { state, ok: true, message: "Dismissed the stuck decision. You can advance." };
+}
+
 export function declineOffer(input: GameState, offerId: string): ActionResult {
   const state = clone(input);
   const offer = state.offers.find((o) => o.id === offerId);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { declineOffer } from "./actions";
 import { migrateCareer } from "./career";
 import { createGame } from "./create";
 import { fixtureCatalog } from "./fixture";
@@ -82,5 +83,58 @@ describe("stuck-state repair", () => {
     expect(state.offers.find((row) => row.id === "off_orphan")?.status).toBe("expired");
     expect(state.events.find((row) => row.id === "evt_dead")?.resolved).toBe("expired");
     expect(state.approaches.find((row) => row.id === "app_old")?.status).toBe("expired");
+  });
+
+  it("decline clears a pending offer so it no longer blocks the week", () => {
+    const state = fresh();
+    const client = state.clients[0];
+    const project = state.projects[0];
+    expect(client).toBeTruthy();
+    expect(project).toBeTruthy();
+    if (!client || !project) return;
+    client.agency = "player";
+    state.offers.push({
+      id: "off_live",
+      projectId: project.id,
+      personId: client.personId,
+      role: "Lead",
+      character: "Sam",
+      fee: 1000,
+      billing: 1,
+      backend: 0,
+      prestige: 40,
+      risk: 40,
+      feeWhy: "",
+      prestigeWhy: "",
+      riskWhy: "",
+      scriptNote: "",
+      expires: addWeeks(state.date, 2),
+      status: "pending",
+      walkAwayFee: 2000,
+      walkAwayBackend: 2,
+      minBilling: 2,
+      dateFlexible: false,
+      perkAvailable: false,
+      perk: null,
+      dateShiftWeeks: 0,
+      studio: project.studio,
+      created: state.date,
+    });
+    state.inbox.push({
+      id: "in_live",
+      date: state.date,
+      kind: "offer",
+      title: "Offer",
+      body: "",
+      href: "/offers?offer=off_live",
+      refId: "off_live",
+      read: false,
+      resolved: false,
+    });
+    const result = declineOffer(state, "off_live");
+    expect(result.ok).toBe(true);
+    expect(result.state.offers.find((row) => row.id === "off_live")?.status).toBe("declined");
+    expect(result.state.inbox.find((row) => row.refId === "off_live")?.resolved).toBe(true);
+    expect(openDecisions(result.state).some((row) => row.id === "off_live")).toBe(false);
   });
 });

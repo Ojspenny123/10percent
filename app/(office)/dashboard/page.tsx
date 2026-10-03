@@ -11,7 +11,7 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string; warn?: string }> }) {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string; warn?: string; saveError?: string }> }) {
   const params = await searchParams;
   const active = await readSlot();
   if (!active) redirect("/");
@@ -30,7 +30,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <button className={buttonClass("secondary")}>Mark inbox read</button>
         </form>
       </PageHeader>
-      <FlashBanner notice={params.notice} error={params.error} warn={params.warn} />
+      <FlashBanner notice={params.notice} error={params.error || params.saveError} warn={params.warn} />
       {state.whatsNewSeen ? null : (
         <div className="mb-4 rounded-2xl border border-line bg-white px-4 py-3 text-sm">
           <p className="font-medium">What is new in v7</p>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { advanceAction } from "@/lib/actions";
+import { advanceAction, dismissDecisionAction } from "@/lib/actions";
 import { formatDate, money } from "@/lib/format";
 import type { GameState } from "@/engine/types";
 import { informationalUnread, openDecisions } from "@/engine";
@@ -45,7 +45,7 @@ export function Shell({ state, version, children }: { state: GameState; version:
     <div className="min-h-screen md:grid md:grid-cols-[240px_minmax(0,1fr)]">
       <script
         dangerouslySetInnerHTML={{
-          __html: `document.addEventListener("submit",function(event){var form=event.target;if(!form||!form.querySelector)return;if(!form.querySelector("[name=version]")){var input=document.createElement("input");input.type="hidden";input.name="version";input.value=${JSON.stringify(String(version))};form.appendChild(input);}var buttons=form.querySelectorAll("button");for(var i=0;i<buttons.length;i++){var button=buttons[i];if(button.disabled)continue;button.disabled=true;button.setAttribute("aria-busy","true");button.textContent="Working…";}},true);`,
+          __html: `document.addEventListener("submit",function(event){var form=event.target;if(!form||!form.querySelector)return;var live=window.__TEN_VERSION;var input=form.querySelector("[name=version]");if(!input){input=document.createElement("input");input.type="hidden";input.name="version";form.appendChild(input);}if(live)input.value=String(live);else if(!input.value)input.value=${JSON.stringify(String(version))};window.setTimeout(function(){var buttons=form.querySelectorAll("button");for(var i=0;i<buttons.length;i++){var button=buttons[i];if(button.disabled)continue;button.disabled=true;button.setAttribute("aria-busy","true");if(!button.dataset.label)button.dataset.label=button.textContent;button.textContent="Working…";}},0);},true);`,
         }}
       />
       <aside className="border-b border-line bg-white/80 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:border-b-0 md:border-r">
@@ -93,10 +93,17 @@ export function Shell({ state, version, children }: { state: GameState; version:
           <SaveStatus lastSaved={formatDate(state.lastAutosave ?? state.date)} version={version} />
         </Suspense>
         {decisions.length > 0 ? (
-          <p className="mb-4 rounded-2xl bg-gold-soft px-3 py-2 text-sm">
-            <Link href={decisions[0]!.href} className="font-medium text-ink">{decisions.length} {decisions.length === 1 ? "decision" : "decisions"} to make this week</Link>
-            <span className="text-muted"> · {decisions[0]!.title}</span>
-          </p>
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-gold-soft px-3 py-2 text-sm">
+            <p>
+              <Link href={decisions[0]!.href} className="font-medium text-ink">{decisions.length} {decisions.length === 1 ? "decision" : "decisions"} to make this week</Link>
+              <span className="text-muted"> · {decisions[0]!.title}</span>
+            </p>
+            <form action={dismissDecisionAction}>
+              <input type="hidden" name="id" value={decisions[0]!.id} />
+              <input type="hidden" name="back" value={decisions[0]!.href.split("#")[0] || "/dashboard"} />
+              <button className={buttonClass("secondary")}>Dismiss (broken item)</button>
+            </form>
+          </div>
         ) : null}
         {children}
       </div>
