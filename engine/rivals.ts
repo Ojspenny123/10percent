@@ -100,7 +100,7 @@ function blankRival(rng: ReturnType<typeof makeRng>, name: string, cityId: strin
     id: `r_${name.toLowerCase().replace(/[^a-z]+/g, "").slice(0, 18)}_${Math.floor(next(rng) * 999)}`,
     name,
     reputation: size === "mega" ? 62 : size === "mid" ? 44 : 28,
-    blurb: `${size === "boutique" ? "A small shop" : size === "mid" ? "A steady shop" : "A huge shop"} in ${city?.city ?? "town"}. ${pick(rng, STRATEGIES).toLowerCase()} by habit.`,
+    blurb: `${size === "boutique" ? "A small shop" : size === "mid" ? "A steady shop" : "A huge shop"} in ${city?.city ?? "town"}. ${pick(rng, STRATEGIES)} by habit.`,
     cityId,
     founded: year - 5 - Math.floor(next(rng) * 40),
     size,

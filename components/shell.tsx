@@ -41,8 +41,14 @@ const NAV = [
 export function Shell({ state, version, children }: { state: GameState; version: number; children: React.ReactNode }) {
   const unread = informationalUnread(state);
   const decisions = openDecisions(state);
+  const locked = decisions.length > 0 || Boolean(state.gameOver);
   return (
     <div className="min-h-screen md:grid md:grid-cols-[240px_minmax(0,1fr)]">
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `document.addEventListener("submit",function(event){var form=event.target;if(!form||!form.querySelector)return;if(form.querySelector("[name=version]"))return;var input=document.createElement("input");input.type="hidden";input.name="version";input.value=${JSON.stringify(String(version))};form.appendChild(input);},true);`,
+        }}
+      />
       <aside className="border-b border-line bg-white/80 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:border-b-0 md:border-r">
         <div className="px-4 py-5">
           <Link href="/dashboard" className="font-serif text-2xl text-ink">
@@ -58,13 +64,13 @@ export function Shell({ state, version, children }: { state: GameState; version:
             </span>
           </p>
           <p className="text-xs text-muted">{state.agency.tier} · reputation {state.agency.reputation}</p>
-          {decisions.length > 0 ? <p className="mt-2 text-xs font-medium text-coral-dark">{decisions.length} decisions to make this week</p> : null}
+          {decisions.length > 0 ? <p className="mt-2 text-xs font-medium text-coral-dark">{decisions.length} {decisions.length === 1 ? "decision" : "decisions"} to make this week</p> : null}
           {unread > 0 ? <p className="mt-2 text-xs font-medium text-coral-dark">{unread} notes unread</p> : null}
         </div>
         <div className="flex gap-2 px-4 pb-4 md:flex-col">
-          <form action={advanceAction}><input type="hidden" name="mode" value="week" /><button className={buttonClass()} disabled={decisions.length > 0}>+1 week</button></form>
-          <form action={advanceAction}><input type="hidden" name="mode" value="month" /><button className={buttonClass("secondary")} disabled={decisions.length > 0}>+1 month</button></form>
-          <form action={advanceAction}><input type="hidden" name="mode" value="event" /><button className={buttonClass("secondary")} disabled={decisions.length > 0}>Until next event</button></form>
+          <form action={advanceAction}><input type="hidden" name="mode" value="week" /><button className={buttonClass()} disabled={locked}>+1 week</button></form>
+          <form action={advanceAction}><input type="hidden" name="mode" value="month" /><button className={buttonClass("secondary")} disabled={locked}>+1 month</button></form>
+          <form action={advanceAction}><input type="hidden" name="mode" value="event" /><button className={buttonClass("secondary")} disabled={locked}>Until next event</button></form>
         </div>
         <nav className="flex gap-4 overflow-x-auto px-4 pb-4 md:block md:space-y-5">
           {NAV.map(([label, links]) => (
@@ -89,7 +95,7 @@ export function Shell({ state, version, children }: { state: GameState; version:
         </Suspense>
         {decisions.length > 0 ? (
           <p className="mb-4 rounded-2xl bg-gold-soft px-3 py-2 text-sm">
-            <Link href={decisions[0]!.href} className="font-medium text-ink">{decisions.length} decisions to make this week</Link>
+            <Link href={decisions[0]!.href} className="font-medium text-ink">{decisions.length} {decisions.length === 1 ? "decision" : "decisions"} to make this week</Link>
             <span className="text-muted"> · {decisions[0]!.title}</span>
           </p>
         ) : null}
