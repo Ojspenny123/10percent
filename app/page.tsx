@@ -1,5 +1,6 @@
 import { createGameAction, loadSlotAction } from "@/lib/actions";
 import { buttonClass, FlashBanner } from "@/components/ui";
+import { CITIES } from "@/engine";
 import { formatDate, money } from "@/lib/format";
 import { listSlots } from "@/lib/game";
 import { savedLabel } from "@/lib/save-diff";
@@ -50,6 +51,19 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   <input type="radio" name="era" value={value} defaultChecked={value === "today"} className="mr-2" />
                   <span className="font-medium">{year}</span>
                   <span className="mt-1 block text-muted">{copy}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="mt-4">
+            <legend className="text-sm">Home city</legend>
+            <div className="mt-2 max-h-72 space-y-2 overflow-y-auto pr-1">
+              {CITIES.map((city) => (
+                <label key={city.id} className="block rounded-2xl border border-line bg-paper p-3 text-sm">
+                  <input type="radio" name="city" value={city.id} defaultChecked={city.id === "los-angeles"} className="mr-2" />
+                  <span className="font-medium">{city.city}</span>
+                  <span className="text-muted"> · {city.country} · Tentpole offers: {city.tentpole}</span>
+                  <span className="mt-1 block text-muted">{city.pros} {city.cons}</span>
                 </label>
               ))}
             </div>

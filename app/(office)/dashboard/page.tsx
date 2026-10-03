@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { eventAction, readInboxAction } from "@/lib/actions";
+import { eventAction, readInboxAction, whatsNewAction } from "@/lib/actions";
 import { Portrait } from "@/components/portrait";
 import { Card, Empty, Explain, FlashBanner, MoodDot, PageHeader, buttonClass } from "@/components/ui";
 import { formatDate, money } from "@/lib/format";
 import { readSlot } from "@/lib/game";
 import { loadCatalog } from "@/lib/catalog";
-import { absWeek, cashWarning, clientAttention, clientFromCatalog, contractEnd, describeAssignment, presentApproach } from "@/engine";
+import { absWeek, cashWarning, cityOf, clientAttention, clientFromCatalog, contractEnd, describeAssignment, needsAction, presentApproach } from "@/engine";
+import { WHATS_NEW } from "@/lib/version";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -24,12 +25,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const upcoming = calendar(state);
   return (
     <main>
-      <PageHeader title="Inbox" lede={`${state.agency.name} · ${formatDate(state.date)}`}>
+      <PageHeader title="Inbox" lede={`${state.agency.name} · ${cityOf(state).city} · ${formatDate(state.date)}`}>
         <form action={readInboxAction}>
           <button className={buttonClass("secondary")}>Mark inbox read</button>
         </form>
       </PageHeader>
       <FlashBanner notice={params.notice} error={params.error} warn={params.warn} />
+      {state.whatsNewSeen ? null : (
+        <div className="mb-4 rounded-2xl border border-line bg-white px-4 py-3 text-sm">
+          <p className="font-medium">What is new in v7</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {WHATS_NEW.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+          <form action={whatsNewAction} className="mt-3"><button className={buttonClass("secondary")}>Got it</button></form>
+        </div>
+      )}
       {cashWarning(state) ? <p className="mb-4 rounded-2xl bg-blush px-3 py-2 text-sm">{cashWarning(state)}</p> : null}
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Card>
@@ -110,7 +120,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <li key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="font-medium">{item.href ? <Link href={item.href} className="hover:text-teal">{item.title}</Link> : item.title}</p>
-                  <span className="text-xs text-muted">{item.kind}</span>
+                  <span className="text-xs text-muted">{needsAction(state, item) ? "action needed" : item.kind}</span>
                 </div>
                 <p className="mt-1 text-sm text-muted">{item.body}</p>
               </li>

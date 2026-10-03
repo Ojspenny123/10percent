@@ -153,9 +153,17 @@ export type Client = {
   medium: Medium;
   filmStar: number;
   tvStar: number;
-  filmPrestige: number;
   tvPrestige: number;
+  filmPrestige: number;
   franchises: FranchiseLock[];
+  primaryFocus?: "Actor" | "Director" | "Both";
+  directingAptitude?: number;
+  directorAcclaim?: number;
+  directorPull?: number;
+  directorReliability?: number;
+  directingCredits?: { title: string; year: number; result: "strong" | "mixed" | "flop"; fee: number }[];
+  agentId?: string | null;
+  socialReach?: number;
 };
 
 export type Review = {
@@ -367,6 +375,8 @@ export type InboxItem = {
   read: boolean;
   resolved?: boolean;
   refId?: string;
+  /** Action needed. Informational notes stay on `read`. */
+  decision?: boolean;
 };
 
 export type NewsItem = {
@@ -555,6 +565,15 @@ export type LedgerEntry = {
 
 export type StaffMember = { role: StaffRole; level: number };
 
+export type OfficeTier = "Starter" | "Standard" | "Premium" | "Flagship";
+
+export type SatelliteOffice = {
+  cityId: string;
+  tier: OfficeTier;
+  upgrades: string[];
+  rent: number;
+};
+
 export type Agency = {
   name: string;
   cash: number;
@@ -562,14 +581,123 @@ export type Agency = {
   tier: AgencyTier;
   staff: StaffMember[];
   rent: number;
+  cityId?: string;
+  officeTier?: OfficeTier;
+  upgrades?: string[];
+  satellites?: SatelliteOffice[];
+  relocating?: { cityId: string; arrives: GameDate } | null;
 };
+
+export type RivalSize = "boutique" | "mid" | "mega";
 
 export type Rival = {
   id: string;
   name: string;
   reputation: number;
   blurb: string;
+  cityId?: string;
+  founded?: number;
+  size?: RivalSize;
+  specialty?: string;
+  strategy?: string;
+  cash?: number;
+  health?: number;
+  relationship?: number;
+  rosterCount?: number;
+  notableIds?: number[];
+  revenue?: number;
+  awards?: number;
+  boxOffice?: number;
+  monogram?: string;
+  nemesis?: boolean;
 };
+
+export type AgentTierName = "Junior" | "Agent" | "Senior" | "Partner";
+export type Autonomy = "full" | "threshold" | "important";
+
+export type FirmAgent = {
+  id: string;
+  name: string;
+  specialty: Medium;
+  genre: string;
+  negotiation: number;
+  network: number;
+  judgement: number;
+  capacity: number;
+  loyalty: number;
+  salary: number;
+  tier: AgentTierName;
+  autonomy: Autonomy;
+  feeThreshold: number;
+  satisfaction: number;
+  earnings: number;
+};
+
+export type PublicistKind = "General" | "Digital" | "Social";
+
+export type Publicist = {
+  id: string;
+  name: string;
+  kind: PublicistKind;
+  level: number;
+  salary: number;
+  personId: number | null;
+  autonomy: Autonomy;
+};
+
+export type CampaignKind = "press" | "charity" | "interviews" | "social" | "brand" | "crisis" | "fyc";
+
+export type Campaign = {
+  id: string;
+  publicistId: string;
+  personId: number | null;
+  projectId?: string;
+  kind: CampaignKind;
+  cost: number;
+  weeksLeft: number;
+  note?: string;
+};
+
+export type ExecRole = "CFO" | "COO" | "CPO" | "CCO" | "CMO" | "GC";
+
+export type Executive = {
+  id: string;
+  role: ExecRole;
+  name: string;
+  skill: number;
+  loyalty: number;
+  greed: number;
+  salary: number;
+  bonusRate: number;
+  retentionBonus: number;
+  years: number;
+  kpi: boolean;
+  risk: number;
+  started: GameDate;
+};
+
+export type TalkInvite = {
+  id: string;
+  personId: number;
+  showId: string;
+  date: GameDate;
+  projectId?: string;
+  status: "pending" | "booked" | "declined";
+};
+
+export type TalkBooking = {
+  id: string;
+  personId: number;
+  showId: string;
+  date: GameDate;
+  projectId?: string;
+  result?: "great" | "fine" | "gaffe";
+  note?: string;
+};
+
+export type YearProfit = { year: number; profit: number; bonus: number };
+
+export type OfficeNote = { date: GameDate; text: string };
 
 export type GameState = {
   version: 1;
@@ -605,6 +733,19 @@ export type GameState = {
   payouts?: TalentPayout[];
   /** Set when emergency financing cannot cover a long cash hole. */
   gameOver?: boolean;
+  agents?: FirmAgent[];
+  publicists?: Publicist[];
+  campaigns?: Campaign[];
+  executives?: Executive[];
+  execBudget?: number;
+  execRisk?: number;
+  talkInvites?: TalkInvite[];
+  talkBookings?: TalkBooking[];
+  profitYears?: YearProfit[];
+  whatsNewSeen?: boolean;
+  agentNotes?: OfficeNote[];
+  execNotes?: OfficeNote[];
+  rivalNotes?: OfficeNote[];
 };
 
 export type ActionResult = {

@@ -12,3 +12,6 @@ export * from "./copy";
 export * from "./career";
 export * from "./money";
 export * from "./productions";
+export * from "./places";
+export * from "./rivals";
+export * from "./v7";

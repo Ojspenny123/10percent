@@ -26,6 +26,8 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
       if (params.mood && client.mood !== params.mood) return false;
       if (params.genre && !client.preferredGenres.includes(params.genre)) return false;
       if (params.medium && client.medium !== params.medium) return false;
+      if (params.agent === "you" && client.agentId) return false;
+      if (params.agent && params.agent !== "you" && client.agentId !== params.agent) return false;
       if (params.expiring === "1") {
         const end = contractEnd(client);
         if (!end) return false;
@@ -75,6 +77,11 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
           <option value="">Any genre</option>
           {genres.map((genre) => <option key={genre}>{genre}</option>)}
         </select>
+        <select name="agent" defaultValue={params.agent || ""} className="rounded-full border border-line bg-white px-3 py-2" aria-label="Agent">
+          <option value="">Any agent</option>
+          <option value="you">You</option>
+          {(active.state.agents ?? []).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+        </select>
         <select name="sort" defaultValue={params.sort || "name"} className="rounded-full border border-line bg-white px-3 py-2" aria-label="Sort">
           <option value="name">Name</option>
           <option value="fame">Fame</option>
@@ -102,7 +109,7 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
                     <h2 className="font-medium leading-tight">{client.name}</h2>
                     <StatusBadge status={work.status} />
                   </div>
-                  <p className="text-xs text-muted">{client.fame}</p>
+                  <p className="text-xs text-muted">{client.fame} · {client.primaryFocus ?? "Actor"} · {active.state.agents?.find((row) => row.id === client.agentId)?.name ?? "You"}</p>
                   <MediumMark medium={client.medium} film={client.filmStar} tv={client.tvStar} />
                   <MoodDot mood={client.mood} />
                   {work.title && work.status !== "AVAILABLE" ? (

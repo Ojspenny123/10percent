@@ -4,8 +4,10 @@ import { agencyTier, clientFromCatalog, isEligible } from "./people";
 import { makeRng } from "./rng";
 import { spawnFilm } from "./generate";
 import type { Catalog, Era, GameState } from "./types";
+import { ensureV7 } from "./v7";
+import { cityById } from "./places";
 
-export function createGame(input: { agencyName: string; era: Era; seed: number; catalog: Catalog }): GameState {
+export function createGame(input: { agencyName: string; era: Era; seed: number; catalog: Catalog; cityId?: string }): GameState {
   const name = input.agencyName.trim();
   if (name.length < 2) throw new Error("Give the agency a name.");
   const startYear = ERA_START[input.era];
@@ -56,6 +58,7 @@ export function createGame(input: { agencyName: string; era: Era; seed: number; 
     payouts: [],
     gameOver: false,
   };
+  state.agency.cityId = cityById(input.cityId)?.id ?? "los-angeles";
   state.ledger.push({ date: { ...state.date }, label: "Opening cash", amount: 400_000, balance: 400_000 });
   const ranked = [...eligible].sort((a, b) => b.popularity - a.popularity);
   ranked.slice(0, 36).forEach((person, index) => {
@@ -93,5 +96,6 @@ export function createGame(input: { agencyName: string; era: Era; seed: number; 
     read: false,
     resolved: false,
   });
+  ensureV7(state, catalog);
   return state;
 }

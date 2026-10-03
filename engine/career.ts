@@ -17,6 +17,7 @@ import type {
   SeriesFormat,
   WorkBlock,
 } from "./types";
+import { ensureRivalField } from "./rivals";
 import { addWeeks, absWeek } from "./schedule";
 import { makeRng, next, int, chance } from "./rng";
 import type { RngState } from "./rng";
@@ -412,6 +413,18 @@ export function bucketFromLabel(label: string): "film" | "series" | "pilot" | "b
 export function migrateCareer(state: GameState): void {
   state.lastAutosave ??= { ...state.date };
   state.productions ??= [];
+  state.agents ??= [];
+  state.publicists ??= [];
+  state.campaigns ??= [];
+  state.executives ??= [];
+  state.talkInvites ??= [];
+  state.talkBookings ??= [];
+  state.profitYears ??= [];
+  state.whatsNewSeen ??= false;
+  state.agency.cityId ??= "los-angeles";
+  state.agency.officeTier ??= "Starter";
+  state.agency.upgrades ??= [];
+  state.agency.satellites ??= [];
   state.loans ??= [];
   state.payouts ??= [];
   state.gameOver ??= false;
@@ -436,6 +449,7 @@ export function migrateCareer(state: GameState): void {
       }
     }
   }
+  ensureRivalField(state);
 }
 
 export function longOrderRefusal(client: Client, role: RoleType, episodes: number): string | null {

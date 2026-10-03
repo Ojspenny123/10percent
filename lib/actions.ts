@@ -27,12 +27,35 @@ import {
   sellLibrary,
   setMarketing,
   takeEmergencyLoan,
+  openDecisions,
+  buyUpgrade,
+  raiseOfficeTier,
+  relocateAgency,
+  openSatellite,
+  hireAgent,
+  setAgent,
+  raiseAgent,
+  fireAgent,
+  assignAgent,
+  hirePublicist,
+  assignPublicist,
+  launchCampaign,
+  hireExecutive,
+  setExecLimits,
+  pitchTalk,
+  resolveTalk,
+  dismissWhatsNew,
   type Era,
   type GameState,
   type StaffRole,
+  type PublicistKind,
+  type ExecRole,
+  type CampaignKind,
+  type Autonomy,
+  type AgentTierName,
 } from "@/engine";
 import { loadCatalog } from "@/lib/catalog";
-import { weeksUntilNextEvent, formatDate } from "@/engine";
+import { weeksUntilNextEvent, formatDate, markInformationalRead } from "@/engine";
 import { SLOT_COOKIE, slotCookieOptions } from "@/lib/game";
 import { commitSlot, copySlot, deleteSlot, loadSlot, writeNewGame } from "@/lib/persist";
 import { SaveConflictError } from "@/lib/save-diff";
@@ -105,7 +128,7 @@ export async function createGameAction(formData: FormData) {
   const catalog = await loadCatalog();
   let state: GameState;
   try {
-    state = createGame({ agencyName: name, era, seed: Math.floor(Math.random() * 1_000_000_000) + 1, catalog });
+    state = createGame({ agencyName: name, era, seed: Math.floor(Math.random() * 1_000_000_000) + 1, catalog, cityId: String(formData.get("city") || "los-angeles") });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not start a game.";
     redirect(`/?error=${encodeURIComponent(message)}`);
@@ -147,6 +170,8 @@ export async function advanceAction(formData: FormData) {
     redirect(saveFailurePath("/dashboard", error));
   }
   if (loaded.state.gameOver) redirect(withParams("/finance", { error: "The agency is closed." }));
+  const decisions = openDecisions(loaded.state);
+  if (decisions.length > 0) redirect(withParams("/dashboard", { error: `${decisions.length} decisions to make this week.` }));
   const mode = String(formData.get("mode") || "week");
   const catalog = await loadCatalog();
   const weeks = mode === "month" ? 4 : mode === "event" ? weeksUntilNextEvent(loaded.state) : 1;
@@ -265,8 +290,8 @@ export async function festivalAction(formData: FormData) {
 
 export async function readInboxAction(formData: FormData) {
   await withSave("/dashboard", formData, (state) => {
-    for (const item of state.inbox) item.read = true;
-    return { state, ok: true, message: "Inbox marked read." };
+    markInformationalRead(state);
+    return { state, ok: true, message: "Notes marked read." };
   });
 }
 
@@ -385,4 +410,105 @@ export async function libraryAction(formData: FormData) {
 
 export async function emergencyLoanAction(formData: FormData) {
   await withSave("/finance", formData, (state) => takeEmergencyLoan(state));
+}
+
+export async function upgradeAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const satellite = String(formData.get("satellite") || "");
+  await withSave("/office", formData, (state) => ({ state, ...buyUpgrade(state, id, satellite || undefined) }));
+}
+
+export async function officeTierAction(formData: FormData) {
+  await withSave("/office", formData, (state) => ({ state, ...raiseOfficeTier(state) }));
+}
+
+export async function relocateAction(formData: FormData) {
+  const cityId = String(formData.get("cityId") || "");
+  await withSave("/office", formData, (state) => ({ state, ...relocateAgency(state, cityId) }));
+}
+
+export async function satelliteAction(formData: FormData) {
+  const cityId = String(formData.get("cityId") || "");
+  await withSave("/office", formData, (state) => ({ state, ...openSatellite(state, cityId) }));
+}
+
+export async function hireAgentAction(formData: FormData) {
+  await withSave("/agents", formData, (state) => ({ state, ...hireAgent(state) }));
+}
+
+export async function agentSettingsAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const autonomy = String(formData.get("autonomy") || "") as Autonomy;
+  const tier = String(formData.get("tier") || "") as AgentTierName;
+  const feeThreshold = Number(formData.get("feeThreshold") || 0);
+  await withSave("/agents", formData, (state) => ({ state, ...setAgent(state, id, { autonomy: autonomy || undefined, tier: tier || undefined, feeThreshold: feeThreshold || undefined }) }));
+}
+
+export async function raiseAgentAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  await withSave("/agents", formData, (state) => ({ state, ...raiseAgent(state, id) }));
+}
+
+export async function fireAgentAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  await withSave("/agents", formData, (state) => ({ state, ...fireAgent(state, id) }));
+}
+
+export async function assignAgentAction(formData: FormData) {
+  const personId = Number(formData.get("personId"));
+  const agentId = String(formData.get("agentId") || "");
+  const back = String(formData.get("back") || "/agents");
+  await withSave(back, formData, (state) => ({ state, ...assignAgent(state, personId, agentId) }));
+}
+
+export async function hirePublicistAction(formData: FormData) {
+  const kind = String(formData.get("kind") || "General") as PublicistKind;
+  await withSave("/publicists", formData, (state) => ({ state, ...hirePublicist(state, kind) }));
+}
+
+export async function assignPublicistAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const personId = Number(formData.get("personId") || 0);
+  await withSave("/publicists", formData, (state) => ({ state, ...assignPublicist(state, id, personId || null) }));
+}
+
+export async function publicityAction(formData: FormData) {
+  const kind = String(formData.get("kind") || "press") as CampaignKind;
+  const personId = Number(formData.get("personId"));
+  const projectId = String(formData.get("projectId") || "");
+  await withSave("/publicists", formData, (state) => ({ state, ...launchCampaign(state, kind, personId, projectId || undefined) }));
+}
+
+export async function hireExecAction(formData: FormData) {
+  const role = String(formData.get("role") || "CFO") as ExecRole;
+  await withSave("/executives", formData, (state) => ({ state, ...hireExecutive(state, role) }));
+}
+
+export async function execLimitsAction(formData: FormData) {
+  const budget = Number(formData.get("budget") || 0);
+  const risk = Number(formData.get("risk") || 40);
+  await withSave("/executives", formData, (state) => {
+    setExecLimits(state, budget, risk);
+    return { state, ok: true, message: "Delegation limits updated." };
+  });
+}
+
+export async function talkPitchAction(formData: FormData) {
+  const personId = Number(formData.get("personId"));
+  const showId = String(formData.get("showId") || "");
+  const projectId = String(formData.get("projectId") || "");
+  await withSave("/talk", formData, (state) => ({ state, ...pitchTalk(state, personId, showId, projectId || undefined) }));
+}
+
+export async function talkResolveAction(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const accept = formData.get("accept") === "yes";
+  await withSave("/talk", formData, (state) => ({ state, ...resolveTalk(state, id, accept) }));
+}
+
+export async function whatsNewAction(formData: FormData) {
+  await withSave("/dashboard", formData, (state) => {
+    dismissWhatsNew(state);
+    return { state, ok: true, message: "" };
+  });
 }

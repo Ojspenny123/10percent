@@ -256,7 +256,8 @@ export function financeProduction(input: GameState, productionId: string, plan: 
   const preview = packageCost({ tier: production.tier, cast, director: production.directorFee, marketing: 0 });
   const marketing = Math.round((preview.cast + preview.director + preview.crew + preview.production + preview.contingency) * marketingRate);
   const cost = packageCost({ tier: production.tier, cast, director: production.directorFee, marketing });
-  const negative = cost.cast + cost.director + cost.crew + cost.production + cost.contingency;
+  const bay = state.agency.upgrades?.includes("edit_bay") ? 0.92 : 1;
+  const negative = Math.round((cost.cast + cost.director + cost.crew + cost.production + cost.contingency) * bay);
   let playerShare = negative;
   let loanPrincipal = 0;
   let investorShare = 0;

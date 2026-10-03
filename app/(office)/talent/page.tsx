@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Portrait } from "@/components/portrait";
 import { MediumMark, PageHeader, buttonClass } from "@/components/ui";
-import { ageOn, applyProfile, fameFromStar, isEligible, preferredGenres, seedStats } from "@/engine";
+import { ageOn, applyProfile, fameFromStar, homeMarket, isEligible, preferredGenres, seedStats } from "@/engine";
 import { signAction } from "@/lib/actions";
 import { loadCatalog } from "@/lib/catalog";
 import { readSlot } from "@/lib/game";
@@ -31,7 +31,7 @@ export default async function TalentPage({ searchParams }: { searchParams: Promi
         fame: client?.fame ?? fameFromStar(stats.stats.starPower, 0),
         genres: preferredGenres(actor.genreMix),
         age,
-        agency: client?.agency ?? "unsigned",
+        agency: client?.agency ?? (active.state.rivals.some((rival) => rival.notableIds?.includes(actor.id)) ? "rival" : "unsigned"),
         rival: client?.rivalId ?? null,
         profile: client
           ? { medium: client.medium, filmStar: client.filmStar, tvStar: client.tvStar }
@@ -115,9 +115,9 @@ export default async function TalentPage({ searchParams }: { searchParams: Promi
               <div className="flex items-start justify-between gap-2">
                 <Link href={`/actors/${row.actor.id}`} className="font-medium leading-tight hover:text-teal">{row.actor.name}</Link>
                 {row.agency === "player" ? <span className="rounded-full bg-teal-soft px-2 py-0.5 text-xs text-teal-dark">Signed</span> : null}
-                {row.agency === "rival" ? <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs text-gold">Rival</span> : null}
+                {row.agency === "rival" ? <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs text-gold">Rival-represented</span> : null}
               </div>
-              <p className="text-xs text-muted">{row.fame} · {genderLabel(row.actor.gender)} · {row.age ?? "?"} · {row.actor.nationality ?? "Unknown"}</p>
+              <p className="text-xs text-muted">{row.fame} · {genderLabel(row.actor.gender)} · {row.age ?? "?"} · {row.actor.nationality ?? "Unknown"} · {homeMarket(row.actor.nationality, active.state.agency.cityId)}</p>
               <MediumMark medium={row.profile.medium} film={row.profile.filmStar} tv={row.profile.tvStar} />
               <p className="text-xs text-muted">{row.genres.join(", ") || "Genre mix still thin"}</p>
               {row.agency !== "player" ? (

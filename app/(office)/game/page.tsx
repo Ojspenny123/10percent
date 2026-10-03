@@ -1,8 +1,9 @@
 import { deleteSlotAction, loadSlotAction, saveAsAction, saveNowAction } from "@/lib/actions";
-import { buttonClass, FlashBanner, PageHeader } from "@/components/ui";
+import { buttonClass, Card, FlashBanner, PageHeader } from "@/components/ui";
 import { formatDate, money } from "@/lib/format";
 import { listSlots, readSlot } from "@/lib/game";
 import { savedLabel } from "@/lib/save-diff";
+import { APP_COMMIT, APP_DEPLOYED_AT, APP_VERSION, WHATS_NEW } from "@/lib/version";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,13 @@ export default async function GamePage({ searchParams }: { searchParams: Promise
   const now = Date.now();
   return (
     <main>
-      <PageHeader title="Game" lede="The open slot is written once each in-game week. Save now is here if you want a copy before then. The other slots stay where you left them." />
+      <PageHeader title="Game" lede={`Ten Percent v${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}${APP_DEPLOYED_AT ? ` · ${APP_DEPLOYED_AT.slice(0, 16).replace("T", " ")} UTC` : ""}. The open slot is written once each in-game week. Save now is here if you want a copy before then.`} />
+      <Card className="mb-6">
+        <h2 className="font-serif text-2xl">What is new in v7</h2>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
+          {WHATS_NEW.map((line) => <li key={line}>{line}</li>)}
+        </ul>
+      </Card>
       <FlashBanner notice={params.notice} error={params.error} />
       <div className="mb-6 flex flex-wrap gap-2">
         <form action={saveNowAction}>

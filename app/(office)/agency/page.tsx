@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { brandAction, staffAction } from "@/lib/actions";
 import { Card, Explain, PageHeader, buttonClass } from "@/components/ui";
 import { STAFF_INFO } from "@/engine/constants";
+import { cityOf } from "@/engine";
 import { formatDate } from "@/engine";
 import type { LedgerBucket, StaffRole } from "@/engine/types";
 import { money } from "@/lib/format";
@@ -20,7 +21,7 @@ export default async function AgencyPage({ searchParams }: { searchParams: Promi
   const monthlyCost = state.agency.rent + state.agency.staff.reduce((sum, member) => sum + STAFF_INFO[member.role].weekly * member.level * 4, 0);
   return (
     <main>
-      <PageHeader title={state.agency.name} lede={`${state.agency.tier} agency · reputation ${state.agency.reputation}. Seed ${state.seed}.`} />
+      <PageHeader title={state.agency.name} lede={`${cityOf(state).city} · ${state.agency.tier} agency · ${cityOf(state).tentpole} tentpoles · reputation ${state.agency.reputation}. Seed ${state.seed}.`} />
       {query.notice ? <p className="mb-3 rounded-2xl bg-teal-soft px-3 py-2 text-sm">{query.notice}</p> : null}
       {query.error ? <p className="mb-3 rounded-2xl bg-blush px-3 py-2 text-sm">{query.error}</p> : null}
       {state.insolventWeeks > 0 ? <p className="mb-3 rounded-2xl bg-blush px-3 py-2 text-sm">Cash is negative. Hiring is still possible only if a deal covers it. Income shows up when clients shoot.</p> : null}

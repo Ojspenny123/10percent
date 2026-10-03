@@ -1,6 +1,8 @@
 # Ten Percent
 
-Hollywood talent-agency management game. Real actors and directors from a TMDB cache. Every film and series is fictional.
+Hollywood talent-agency management game, version 7. Real actors and directors from a TMDB cache. Every film, series, studio, and rival agency is fictional.
+
+Version 7 adds a home city and office upgrades, actors who move into directing, named agents and publicists, an executive team paid from profit, UK and US talk shows, and a league of fictional rival agencies. The week will not advance while a decision is still open. Old saves load in Los Angeles with the new fields filled in.
 
 ## Environment
 

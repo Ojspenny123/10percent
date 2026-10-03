@@ -2,6 +2,7 @@ import { STAFF_INFO } from "./constants";
 import { castFromClient, nextId } from "./generate";
 import { agencyTier, clamp, clientFromCatalog, expectedFee, genreFit, rosterCap } from "./people";
 import { longOrderRefusal } from "./career";
+import { rivalHolding } from "./rivals";
 import { addWeeks, blocksConflict, cmpDate, formatDate, scheduleConflict, shootEnd, tryShift } from "./schedule";
 import type { ActionResult, Approach, ApproachAsk, BudgetTier, Catalog, Client, GameState, HiddenTraits, LedgerBucket, Offer, Project, StaffRole } from "./types";
 
@@ -309,12 +310,21 @@ export function signClient(
   terms: { commission: number; years: number; exclusive: boolean; exitClause: boolean },
 ): ActionResult {
   const state = clone(input);
-  const existing = state.clients.find((c) => c.personId === personId);
+  let existing = state.clients.find((c) => c.personId === personId);
   if (existing?.agency === "player" && existing.contract) {
     return { state, ok: false, message: `${existing.name} is already a client.` };
   }
-  const person = catalog.actors.find((a) => a.id === personId);
+  const person = catalog.actors.find((a) => a.id === personId) ?? catalog.directors.find((a) => a.id === personId);
   if (!person && !existing) return { state, ok: false, message: "That actor is not in the cached talent pool." };
+  if (!existing && person) {
+    const held = rivalHolding(state, personId);
+    if (held) {
+      existing = clientFromCatalog(person, "rival", state.date, held.id);
+      existing.loyalty = 62;
+      existing.contract = { commission: 10, start: { ...state.date }, termYears: 2, exclusive: true, exitClause: false };
+      state.clients.push(existing);
+    }
+  }
   const roster = state.clients.filter((row) => row.agency === "player" && row.contract).length;
   const cap = rosterCap(state.agency.tier);
   if (roster >= cap) {
@@ -351,6 +361,13 @@ export function signClient(
     exitClause: terms.exitClause,
   };
   client.loyalty = clamp(client.loyalty + (poach ? -4 : 6), 1, 99);
+  if (person?.department === "Directing") {
+    client.primaryFocus = "Director";
+    client.directingAptitude = Math.max(client.directingAptitude ?? 0, 72);
+    client.directorAcclaim = Math.round(person.avgRating * 10);
+    client.directorPull = Math.min(99, Math.round(person.popularity));
+    client.directorReliability = 60;
+  }
   if (!existing) state.clients.push(client);
   const approach = state.approaches.find((a) => a.personId === personId && a.status === "pending");
   if (approach) {
@@ -849,6 +866,52 @@ export function applyEventChoice(state: GameState, eventId: string, choiceId: st
   } else if (id === "pay_overtime") {
     if (state.agency.cash >= 20_000) book(state, -20_000, "Overtime to keep the dates");
     if (client) client.mood = "Content";
+  } else if (client && id === "direct_talk") {
+    client.loyalty = clamp(client.loyalty - 12, 1, 99);
+    client.mood = "Unhappy";
+  } else if (client && (id === "direct_back" || id === "direct_small")) {
+    const weeks = id === "direct_back" ? 14 : 6;
+    const busy = scheduleConflict(state, client.personId, state.date, addWeeks(state.date, weeks));
+    if (!busy) {
+      const cost = id === "direct_back" ? 80_000 : 20_000;
+      if (state.agency.cash >= cost) book(state, -cost, `Directing development · ${client.name}`, "production");
+      const aptitude = client.directingAptitude ?? 40;
+      const result = aptitude >= 72 ? "strong" : aptitude >= 46 ? "mixed" : "flop";
+      const fee = id === "direct_back" ? 250_000 : 40_000;
+      const title = id === "direct_back" ? `Debut of ${client.name.split(" ")[0]}` : `Short film · ${client.name.split(" ")[0]}`;
+      client.directingCredits ??= [];
+      client.directingCredits.push({ title, year: state.date.year, result, fee });
+      client.directorAcclaim = clamp((client.directorAcclaim ?? aptitude) + (result === "strong" ? 8 : result === "flop" ? -6 : 2), 1, 99);
+      client.directorPull = clamp((client.directorPull ?? client.filmStar) + (result === "strong" ? 6 : -2), 1, 99);
+      client.directorReliability = clamp((client.directorReliability ?? 50) + (result === "flop" ? -8 : 4), 1, 99);
+      const age = client.birthday ? state.date.year - Number(client.birthday.slice(0, 4)) : 40;
+      client.primaryFocus = age >= 50 && result === "strong" ? "Director" : "Both";
+      const cut = client.contract ? Math.round(fee * client.contract.commission / 100) : 0;
+      if (cut > 0) book(state, cut, `Directing commission · ${client.name}`, "film");
+      state.holds.push({
+        id: `hold_${++state.seq}`,
+        personId: client.personId,
+        start: { ...state.date },
+        end: addWeeks(state.date, weeks),
+        reason: `Directing ${title}`,
+        kind: "personal",
+      });
+    }
+  } else if (id === "bid_match" && event.personId) {
+    const target = state.clients.find((row) => row.personId === event.personId);
+    if (target && target.agency !== "player") {
+      target.agency = "player";
+      target.rivalId = null;
+      target.contract = { commission: 8, start: { ...state.date }, termYears: 2, exclusive: true, exitClause: true };
+      target.loyalty = clamp(target.loyalty + 4, 1, 99);
+    }
+  } else if (id === "bid_pass" && event.personId) {
+    const target = state.clients.find((row) => row.personId === event.personId);
+    if (target && target.agency === "unsigned") {
+      target.agency = "rival";
+      target.rivalId = state.rivals[0]?.id ?? "meridian";
+      target.contract = { commission: 10, start: { ...state.date }, termYears: 2, exclusive: true, exitClause: false };
+    }
   }
   state.inbox.unshift({
     id: `in_${++state.seq}`,

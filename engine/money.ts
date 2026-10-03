@@ -348,7 +348,10 @@ export function loanWeek(loan: { balance: number; principal: number; annualRate:
 
 export function weeklyOverhead(state: GameState): number {
   const salaries = state.agency.staff.reduce((sum, member) => sum + STAFF_INFO[member.role].weekly * member.level, 0);
-  return roundMoney(state.agency.rent / 4 + salaries);
+  const named = (state.agents ?? []).reduce((sum, row) => sum + row.salary, 0)
+    + (state.publicists ?? []).reduce((sum, row) => sum + row.salary, 0)
+    + (state.executives ?? []).reduce((sum, row) => sum + row.salary, 0);
+  return roundMoney(state.agency.rent / 4 + salaries + named);
 }
 
 export function cashWarning(state: GameState): string | null {

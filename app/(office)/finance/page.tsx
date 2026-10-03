@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { emergencyLoanAction, libraryAction } from "@/lib/actions";
 import { Line } from "@/components/charts";
 import { Card, PageHeader, buttonClass } from "@/components/ui";
-import { cashWarning, formatDate, incomeTimeline, netWorth } from "@/engine";
+import { cashWarning, formatDate, incomeTimeline, netWorth, projectedBonus, staffWeekly, yearNet } from "@/engine";
 import { money } from "@/lib/format";
 import { readSlot } from "@/lib/game";
 
@@ -45,6 +45,11 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
         <Card><p className="text-sm text-muted">Receivables</p><p className="font-serif text-3xl">{money(worth.receivables)}</p></Card>
         <Card><p className="text-sm text-muted">Debt</p><p className="font-serif text-3xl">{money(worth.debt)}</p></Card>
         <Card><p className="text-sm text-muted">Net worth</p><p className="font-serif text-3xl">{money(worth.total)}</p></Card>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <Card><p className="text-sm text-muted">Weekly staff and upkeep</p><p className="font-serif text-2xl">{money(staffWeekly(state))}</p></Card>
+        <Card><p className="text-sm text-muted">Executive bonus outlook</p><p className="font-serif text-2xl">{money(projectedBonus(state, Math.max(0, yearNet(state, state.date.year))))}</p></Card>
+        <Card><p className="text-sm text-muted">Paid executive bonuses</p><p className="font-serif text-2xl">{money(state.ledger.filter((entry) => entry.label === "Executive profit bonus").reduce((sum, entry) => sum + entry.amount, 0))}</p></Card>
       </div>
       <h2 className="mb-3 mt-8 font-serif text-2xl">Income</h2>
       <div className="grid gap-3 sm:grid-cols-3">

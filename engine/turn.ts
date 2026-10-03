@@ -1,4 +1,4 @@
-import { applyEventChoice, book, bumpRep, closeApproachInbox, closeInbox, pushApproach, tierBias } from "./actions";
+import { acceptOffer, applyEventChoice, book, bumpRep, closeApproachInbox, closeInbox, declineOffer, pushApproach, tierBias } from "./actions";
 import {
   buildBlocks,
   dealBlurb,
@@ -34,6 +34,8 @@ import {
 } from "./generate";
 import { quotePackage } from "./money";
 import { advanceMoney, applySleeper, resolveInsolvency, scheduleTalentPay } from "./productions";
+import { cityOf, blocksStudioOffer, markInformationalRead, openDecisions, tickV7, agentPlan } from "./v7";
+import { sameCountry } from "./rivals";
 import { agencyTier, clamp, clientFromCatalog, expectedFee, fameFromStar, isEligible, traitHints } from "./people";
 import { chance, float, int, pick } from "./rng";
 import {
@@ -135,16 +137,55 @@ function stepWeek(state: GameState, catalog: Catalog, options: AdvanceOptions): 
   generateOffers(state, catalog);
   generateInbound(state, catalog);
   generateBrands(state);
+  offerRegional(state, catalog);
   rivalAct(state, catalog);
   const paused = maybeEvent(state, options);
   writeNews(state);
   snapshotHistory(state);
   trim(state);
+  tickV7(state, catalog, Boolean(options.autoResolveEvents));
+  if (!options.autoResolveEvents) settleWithAgents(state);
+  markInformationalRead(state);
   state.lastAutosave = { ...state.date };
   migrateCareer(state);
   resolveInsolvency(state);
   state.agency.tier = agencyTier(state.agency.reputation);
+  if (!options.autoResolveEvents && openDecisions(state).length > 0) return true;
   return paused;
+}
+
+function settleWithAgents(state: GameState): void {
+  const pending = state.offers.filter((offer) => offer.status === "pending");
+  for (const offer of pending) {
+    const plan = agentPlan(state, offer);
+    if (plan === "escalate") continue;
+    const result = plan === "accept" ? acceptOffer(state, offer.id, true) : declineOffer(state, offer.id);
+    if (!result.ok) continue;
+    copyState(state, result.state);
+    state.agentNotes ??= [];
+    state.agentNotes.unshift({ date: { ...state.date }, text: result.message });
+  }
+}
+
+function copyState(live: GameState, next: GameState): void {
+  for (const key of Object.keys(next) as (keyof GameState)[]) {
+    (live as unknown as Record<string, unknown>)[key] = next[key];
+  }
+}
+
+function offerRegional(state: GameState, catalog: Catalog): void {
+  const city = cityOf(state);
+  if (city.hub === "major") return;
+  const saved = state.rng;
+  state.rng = sideRng(state, 8800 + state.date.year * 52 + state.date.week);
+  try {
+    if (!chance(state.rng, city.hub === "secondary" ? 0.18 : 0.28)) return;
+    const clients = state.clients.filter((client) => client.agency === "player" && client.contract);
+    if (!clients.length) return;
+    createPlayerOffer(state, catalog, pick(state.rng, clients), "film", true);
+  } finally {
+    state.rng = saved;
+  }
 }
 
 function shiftTrends(state: GameState): void {
@@ -593,6 +634,10 @@ function generateOffers(state: GameState, catalog: Catalog): void {
     if (client.agency !== "player" || !client.contract) continue;
     const pending = state.offers.filter((o) => o.personId === client.personId && o.status === "pending").length;
     if (pending >= 2) continue;
+    if (client.primaryFocus === "Director") {
+      const side = sideRng(state, 990 + client.personId + state.date.week);
+      if (!chance(side, 0.22)) continue;
+    }
     const fameP = { Unknown: 0.12, Working: 0.18, Known: 0.28, "A-list": 0.4, Icon: 0.48 }[client.fame];
     const p = Math.min(0.8, fameP + client.stats.buzz / 350 + state.agency.reputation / 450 + agent * 0.06 + tierBias(client.fame === "Icon" ? "tentpole" : "mid") * 0);
     if (!chance(state.rng, p)) continue;
@@ -623,7 +668,7 @@ function maybeSideOffer(state: GameState, catalog: Catalog, client: Client): voi
   });
 }
 
-function createPlayerOffer(state: GameState, catalog: Catalog, client: Client, forcedKind?: "film" | "series"): void {
+function createPlayerOffer(state: GameState, catalog: Catalog, client: Client, forcedKind?: "film" | "series", regional = false): void {
   const rng = state.rng;
   const kind = forcedKind ?? (client.fame === "Icon" ? "film" : chance(rng, 0.24) ? "series" : "film");
   const slot = roleForClient(rng, client, kind);
@@ -640,9 +685,17 @@ function createPlayerOffer(state: GameState, catalog: Catalog, client: Client, f
             genre,
             openFor: { client, role: slot.role, billing: slot.billing },
             excludePeople: new Set(playerIds(state)),
-            forceTier: tierForClient(client, genre),
+            forceTier: regional ? "indie" : tierForClient(client, genre),
           });
     if (!project) continue;
+    if (regional) {
+      const city = cityOf(state);
+      project.logline = `${city.city} production. ${project.logline}`;
+      project.studio = city.studio;
+    } else if (blocksStudioOffer(state, project.budgetTier, client.filmStar)) {
+      dropProject(state, project);
+      continue;
+    }
     const conflict = scheduleConflict(state, client.personId, project.prepStart, shootEnd(project), project.id);
     if (conflict) {
       dropProject(state, project);
@@ -912,7 +965,12 @@ function generateInbound(state: GameState, catalog: Catalog): void {
   if (!chance(state.rng, Math.min(0.55, p))) return;
   const taken = new Set(state.clients.map((c) => c.personId));
   for (const approach of state.approaches) if (approach.status === "pending") taken.add(approach.personId);
-  const pool = livingActors(catalog, state.date).filter((a) => !taken.has(a.id) && isEligible(a, state.era, state.date.year));
+  let pool = livingActors(catalog, state.date).filter((a) => !taken.has(a.id) && isEligible(a, state.era, state.date.year));
+  const home = cityOf(state);
+  if (home.hub !== "major") {
+    const local = pool.filter((actor) => sameCountry(actor.nationality, home.country) || sameCountry(actor.placeOfBirth, home.country));
+    if (local.length > 6) pool = [...local, ...pool.filter((actor) => !local.includes(actor))];
+  }
   if (pool.length === 0) return;
   const person = pick(state.rng, pool.slice(0, 80).length ? pool.slice(0, Math.min(pool.length, 120)) : pool);
   pushApproach(state, catalog, person.id, { weeks: int(state.rng, 3, 6) });
@@ -943,7 +1001,8 @@ function rivalAct(state: GameState, catalog: Catalog): void {
   const pool = livingActors(catalog, state.date).filter((a) => !taken.has(a.id) && a.popularity > 20);
   if (pool.length) {
     const person = pick(state.rng, pool.slice(0, 40));
-    const rival = pick(state.rng, state.rivals);
+    const legacy = state.rivals.filter((row) => row.id === "meridian" || row.id === "northvale" || row.id === "atlas");
+    const rival = pick(state.rng, legacy.length ? legacy : state.rivals);
     const client = clientFromCatalog(person, "rival", state.date, rival.id);
     client.contract = { commission: 10, start: { ...state.date }, termYears: 2, exclusive: true, exitClause: false };
     state.clients.push(client);

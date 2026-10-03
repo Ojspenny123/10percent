@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Portrait } from "@/components/portrait";
 import { Card, Explain, MediumMark, MoodDot, PageHeader, Progress, StatBar, StatusBadge, buttonClass } from "@/components/ui";
-import { ageOn, filmHistory, formatDate, personBlocks, phaseAt, preferenceLabel, seriesHistory, workStatus } from "@/engine";
+import { ageOn, filmHistory, formatDate, homeMarket, personBlocks, phaseAt, preferenceLabel, seriesHistory, workStatus } from "@/engine";
 import { money } from "@/lib/format";
 import { genderLabel } from "@/engine/people";
 import { absWeek, contractEnd } from "@/engine/schedule";
@@ -45,6 +45,8 @@ export default async function ActorPage({ params, searchParams }: { params: Prom
           {query.notice ? <p className="mb-3 rounded-2xl bg-teal-soft px-3 py-2 text-sm">{query.notice}</p> : null}
           {query.error ? <p className="mb-3 rounded-2xl bg-blush px-3 py-2 text-sm">{query.error}</p> : null}
           {client ? <MoodDot mood={client.mood} /> : null}
+          {client ? <p className="mt-2 text-sm">Primary: {client.primaryFocus ?? "Actor"} · Home market: {homeMarket(client.nationality, active.state.agency.cityId)}{client.agentId ? ` · Agent ${active.state.agents?.find((row) => row.id === client.agentId)?.name ?? "assigned"}` : ""}{client.agency === "rival" ? " · Rival-represented" : ""}</p> : null}
+          {client?.directingCredits?.length ? <p className="mt-1 text-sm text-muted">Directing: {client.directingCredits.map((credit) => `${credit.title} (${credit.result})`).join(", ")} · acclaim {client.directorAcclaim ?? "—"} · pull {client.directorPull ?? "—"}</p> : null}
           <p className="mt-2 text-sm text-muted">{preferenceLabel(client?.nextPreference ?? "none")}</p>
           {work.title && work.status !== "AVAILABLE" ? (
             <Card className="mt-4">
