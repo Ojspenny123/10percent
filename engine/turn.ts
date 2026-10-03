@@ -198,7 +198,7 @@ function shiftTrends(state: GameState): void {
     state.genreTrends[genre] = Math.round(Math.max(0.72, Math.min(1.35, value)) * 100) / 100;
   }
   for (const client of state.clients) {
-    for (const studio of Object.keys(client.studioHeat)) {
+    for (const studio of Object.keys(client.studioHeat ?? {})) {
       client.studioHeat[studio] = Math.max(0, (client.studioHeat[studio] ?? 0) - 1);
     }
   }

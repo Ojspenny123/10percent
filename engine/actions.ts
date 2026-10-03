@@ -260,6 +260,7 @@ export function counterOffer(
   if (fee > offer.walkAwayFee || backend > offer.walkAwayBackend + 0.1 || billing < offer.minBilling) {
     offer.status = "killed";
     closeInbox(state, offer.id);
+    client.studioHeat ??= {};
     client.studioHeat[offer.studio] = (client.studioHeat[offer.studio] ?? 0) + 2;
     project.openRole = null;
     state.inbox.unshift({
@@ -952,7 +953,7 @@ export function pendingConflictMessage(state: GameState, personId: number, proje
 
 export function offerWalkaway(state: GameState, client: Client, fee: number, studio: string): { walkAwayFee: number; walkAwayBackend: number; minBilling: number } {
   const lawyer = staffLevel(state, "lawyer");
-  const heat = client.studioHeat[studio] ?? 0;
+  const heat = client.studioHeat?.[studio] ?? 0;
   const generosity = 1.16 + (state.rng.s % 20) / 100 + lawyer * 0.05 + client.stats.reputation / 500 - heat * 0.05;
   return {
     walkAwayFee: Math.round(fee * Math.max(1.05, generosity)),

@@ -7,11 +7,12 @@ export class PartialSaveError extends Error {
   readonly kind: "conflict" | "failed";
   constructor(stepped: number, cause: unknown) {
     const conflict = cause instanceof SaveConflictError;
+    const detail = !conflict && cause instanceof Error && cause.message ? ` ${cause.message}` : "";
     const base = conflict
       ? cause.message
       : stepped > 0
-        ? `Save failed after ${stepped} saved week${stepped === 1 ? "" : "s"}. The unfinished week was rolled back.`
-        : "Save failed. The unfinished week was rolled back.";
+        ? `Save failed after ${stepped} saved week${stepped === 1 ? "" : "s"}. The unfinished week was rolled back.${detail}`
+        : `Save failed. The unfinished week was rolled back.${detail}`;
     const extra = conflict && stepped > 0
       ? ` ${stepped} earlier week${stepped === 1 ? " was" : "s were"} saved.`
       : "";

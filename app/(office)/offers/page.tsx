@@ -83,6 +83,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                   <div className="flex flex-wrap gap-2">
                     <form action={acceptOfferAction}>
                       <input type="hidden" name="offerId" value={selected.id} />
+                      {params.warn ? <input type="hidden" name="confirm" value="yes" /> : null}
                       <button className={buttonClass()}>Accept</button>
                     </form>
                     <form action={declineOfferAction}>
@@ -109,7 +110,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                     ) : null}
                     <button className={buttonClass("secondary")}>Send counter</button>
                   </form>
-                  <p className="text-xs text-muted">Studio walk-away is hidden. Heat with {selected.studio}: {client.studioHeat[selected.studio] ?? 0}.</p>
+                  <p className="text-xs text-muted">Studio walk-away is hidden. Heat with {selected.studio}: {client.studioHeat?.[selected.studio] ?? 0}.</p>
                 </div>
               ) : <p className="mt-4 text-sm">This offer is {selected.status.replaceAll("_", " ")}. Nothing left to sign on it.</p>}
             </Card>

@@ -110,7 +110,7 @@ export function FlashBanner({ notice, error, warn }: { notice?: string; error?: 
 }
 
 export function buttonClass(kind: "primary" | "secondary" | "danger" = "primary"): string {
-  const base = "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition";
+  const base = "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition disabled:cursor-wait disabled:opacity-60";
   if (kind === "secondary") return `${base} border border-line bg-white text-ink hover:border-teal`;
   if (kind === "danger") return `${base} border border-coral/40 bg-white text-coral-dark hover:bg-blush`;
   return `${base} bg-coral text-white hover:bg-coral-dark`;

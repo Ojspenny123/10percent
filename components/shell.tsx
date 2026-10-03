@@ -41,12 +41,11 @@ const NAV = [
 export function Shell({ state, version, children }: { state: GameState; version: number; children: React.ReactNode }) {
   const unread = informationalUnread(state);
   const decisions = openDecisions(state);
-  const locked = decisions.length > 0 || Boolean(state.gameOver);
   return (
     <div className="min-h-screen md:grid md:grid-cols-[240px_minmax(0,1fr)]">
       <script
         dangerouslySetInnerHTML={{
-          __html: `document.addEventListener("submit",function(event){var form=event.target;if(!form||!form.querySelector)return;if(form.querySelector("[name=version]"))return;var input=document.createElement("input");input.type="hidden";input.name="version";input.value=${JSON.stringify(String(version))};form.appendChild(input);},true);`,
+          __html: `document.addEventListener("submit",function(event){var form=event.target;if(!form||!form.querySelector)return;if(!form.querySelector("[name=version]")){var input=document.createElement("input");input.type="hidden";input.name="version";input.value=${JSON.stringify(String(version))};form.appendChild(input);}var buttons=form.querySelectorAll("button");for(var i=0;i<buttons.length;i++){var button=buttons[i];if(button.disabled)continue;button.disabled=true;button.setAttribute("aria-busy","true");button.textContent="Working…";}},true);`,
         }}
       />
       <aside className="border-b border-line bg-white/80 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:border-b-0 md:border-r">
@@ -68,9 +67,9 @@ export function Shell({ state, version, children }: { state: GameState; version:
           {unread > 0 ? <p className="mt-2 text-xs font-medium text-coral-dark">{unread} notes unread</p> : null}
         </div>
         <div className="flex gap-2 px-4 pb-4 md:flex-col">
-          <form action={advanceAction}><input type="hidden" name="mode" value="week" /><button className={buttonClass()} disabled={locked}>+1 week</button></form>
-          <form action={advanceAction}><input type="hidden" name="mode" value="month" /><button className={buttonClass("secondary")} disabled={locked}>+1 month</button></form>
-          <form action={advanceAction}><input type="hidden" name="mode" value="event" /><button className={buttonClass("secondary")} disabled={locked}>Until next event</button></form>
+          <form action={advanceAction}><input type="hidden" name="version" value={version} /><input type="hidden" name="mode" value="week" /><button className={buttonClass()} disabled={Boolean(state.gameOver)}>+1 week</button></form>
+          <form action={advanceAction}><input type="hidden" name="version" value={version} /><input type="hidden" name="mode" value="month" /><button className={buttonClass("secondary")} disabled={Boolean(state.gameOver)}>+1 month</button></form>
+          <form action={advanceAction}><input type="hidden" name="version" value={version} /><input type="hidden" name="mode" value="event" /><button className={buttonClass("secondary")} disabled={Boolean(state.gameOver)}>Until next event</button></form>
         </div>
         <nav className="flex gap-4 overflow-x-auto px-4 pb-4 md:block md:space-y-5">
           {NAV.map(([label, links]) => (

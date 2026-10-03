@@ -67,19 +67,28 @@ function withParams(path: string, params: Record<string, string>) {
   return `${url.pathname}${url.search}`;
 }
 
-function readVersion(formData: FormData): number {
-  const value = Number(formData.get("version"));
-  if (!Number.isInteger(value) || value < 1) throw new SaveConflictError("Reload the page, then try again.");
+function rethrowNavigation(error: unknown): void {
+  if (typeof error === "object" && error !== null && "digest" in error) {
+    const digest = String((error as { digest?: unknown }).digest ?? "");
+    if (digest.startsWith("NEXT_REDIRECT") || digest.startsWith("NEXT_HTTP_ERROR_FALLBACK") || digest.startsWith("NEXT_NOT_FOUND")) throw error;
+  }
+}
+
+function readVersion(formData: FormData): number | null {
+  const raw = formData.get("version");
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) return null;
   return value;
 }
 
-async function requireSlot(expected: number) {
+async function requireSlot(expected: number | null) {
   const jar = await cookies();
   const id = jar.get(SLOT_COOKIE)?.value;
   if (!id) redirect("/");
   const loaded = await loadSlot(id);
   if (!loaded) redirect("/");
-  if (loaded.saveVersion !== expected) throw new SaveConflictError();
+  if (expected != null && loaded.saveVersion !== expected) throw new SaveConflictError();
   return loaded;
 }
 
@@ -91,7 +100,7 @@ function saveFailurePath(path: string, error: unknown) {
 }
 
 async function withSave(path: string, formData: FormData, run: (state: GameState) => Promise<{ state: GameState; ok: boolean; message: string; warning?: string; href?: string }> | { state: GameState; ok: boolean; message: string; warning?: string; href?: string }) {
-  let expected: number;
+  let expected: number | null;
   try {
     expected = readVersion(formData);
   } catch (error) {
@@ -105,15 +114,21 @@ async function withSave(path: string, formData: FormData, run: (state: GameState
     if (!(error instanceof SaveConflictError)) throw error;
     redirect(saveFailurePath(path, error));
   }
-  const result = await run(loaded.state);
+  let result: { state: GameState; ok: boolean; message: string; warning?: string; href?: string };
+  try {
+    result = await run(loaded.state);
+  } catch (error) {
+    rethrowNavigation(error);
+    const message = error instanceof Error && error.message ? error.message : "That action failed.";
+    redirect(withParams(path, { error: message }));
+  }
   const dest = result.href || path;
-  if (result.warning) redirect(withParams(dest, { warn: result.warning }));
+  if (result.warning) redirect(withParams(dest, { warn: result.warning, error: result.message }));
   try {
     await commitSlot(loaded.id, loaded.saveVersion, result.state);
   } catch (error) {
     redirect(saveFailurePath(dest, error));
   }
-  revalidatePath("/", "layout");
   if (!result.message) redirect(dest);
   const key = result.ok ? "notice" : "error";
   redirect(withParams(dest, { [key]: result.message }));
@@ -155,7 +170,7 @@ export async function loadSlotAction(formData: FormData) {
 }
 
 export async function advanceAction(formData: FormData) {
-  let expected: number;
+  let expected: number | null;
   try {
     expected = readVersion(formData);
   } catch (error) {
@@ -169,9 +184,11 @@ export async function advanceAction(formData: FormData) {
     if (!(error instanceof SaveConflictError)) throw error;
     redirect(saveFailurePath("/dashboard", error));
   }
-  if (loaded.state.gameOver) redirect(withParams("/finance", { error: "The agency is closed." }));
+  if (loaded.state.gameOver) redirect(withParams("/finance", { error: "The agency is closed. Cash ran out and the emergency loans could not cover it." }));
   const decisions = openDecisions(loaded.state);
-  if (decisions.length > 0) redirect(withParams("/dashboard", { error: `${decisions.length} decisions to make this week.` }));
+  if (decisions.length > 0) {
+    redirect(withParams("/dashboard", { error: `${decisions.length} ${decisions.length === 1 ? "decision" : "decisions"} to make this week. First: ${decisions[0]!.title}` }));
+  }
   const mode = String(formData.get("mode") || "week");
   const catalog = await loadCatalog();
   const weeks = mode === "month" ? 4 : mode === "event" ? weeksUntilNextEvent(loaded.state) : 1;
@@ -184,15 +201,15 @@ export async function advanceAction(formData: FormData) {
       stopOnEvent: true,
       commit: (version, state) => commitSlot(loaded.id, version, state),
     });
-    revalidatePath("/", "layout");
     const message = result.message.startsWith("Paused")
       ? result.message
       : `Advanced ${result.stepped} week${result.stepped === 1 ? "" : "s"} to ${formatDate(result.state.date)}.`;
     redirect(withParams("/dashboard", { notice: message }));
   } catch (error) {
-    if (!(error instanceof PartialSaveError)) throw error;
-    revalidatePath("/", "layout");
-    redirect(saveFailurePath("/dashboard", error));
+    rethrowNavigation(error);
+    if (error instanceof PartialSaveError) redirect(saveFailurePath("/dashboard", error));
+    const message = error instanceof Error && error.message ? error.message : "The week could not be saved. Nothing was kept from that attempt.";
+    redirect(withParams("/dashboard", { error: message }));
   }
 }
 
@@ -304,7 +321,7 @@ export async function saveNowAction(formData: FormData) {
 }
 
 export async function saveAsAction(formData: FormData) {
-  let expected: number;
+  let expected: number | null;
   try {
     expected = readVersion(formData);
   } catch (error) {

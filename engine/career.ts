@@ -18,7 +18,7 @@ import type {
   WorkBlock,
 } from "./types";
 import { ensureRivalField } from "./rivals";
-import { addWeeks, absWeek } from "./schedule";
+import { addWeeks, absWeek, cmpDate } from "./schedule";
 import { makeRng, next, int, chance } from "./rng";
 import type { RngState } from "./rng";
 
@@ -144,6 +144,8 @@ export function backfillClient(client: Client, year: number): void {
     client.tvPrestige ??= profile.tvPrestige;
   }
   client.franchises ??= [];
+  client.studioHeat ??= {};
+  client.revealedHints ??= [];
   client.filmStar = clamp(client.filmStar, 1, 99);
   client.tvStar = clamp(client.tvStar, 1, 99);
   client.filmPrestige = clamp(client.filmPrestige ?? 50, 1, 99);
@@ -450,6 +452,35 @@ export function migrateCareer(state: GameState): void {
     }
   }
   ensureRivalField(state);
+  repairStuck(state);
+}
+
+function repairStuck(state: GameState): void {
+  const now = state.date;
+  for (const event of state.events ?? []) {
+    if (event.resolved) continue;
+    if (!event.choices?.length || (event.expires && cmpDate(event.expires, now) < 0)) event.resolved = "expired";
+  }
+  for (const offer of state.offers ?? []) {
+    if (offer.status !== "pending") continue;
+    const client = state.clients.find((row) => row.personId === offer.personId && row.agency === "player");
+    const project = state.projects.find((row) => row.id === offer.projectId);
+    if (!client || !project || (offer.expires && cmpDate(offer.expires, now) < 0)) offer.status = "expired";
+  }
+  for (const approach of state.approaches ?? []) {
+    if (approach.status !== "pending") continue;
+    if (!approach.id || (approach.expires && cmpDate(approach.expires, now) < 0)) approach.status = "expired";
+  }
+  for (const deal of state.brandDeals ?? []) {
+    if (deal.status !== "offered") continue;
+    const client = state.clients.find((row) => row.personId === deal.personId && row.agency === "player");
+    if (!client || (deal.end && cmpDate(deal.end, now) < 0)) deal.status = "declined";
+  }
+  for (const invite of state.talkInvites ?? []) {
+    if (invite.status !== "pending") continue;
+    const client = state.clients.find((row) => row.personId === invite.personId && row.agency === "player");
+    if (!client) invite.status = "declined";
+  }
 }
 
 export function longOrderRefusal(client: Client, role: RoleType, episodes: number): string | null {

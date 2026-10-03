@@ -160,26 +160,36 @@ export function homeMarket(nationality: string | null, cityId: string | undefine
 export function openDecisions(state: GameState): { id: string; title: string; href: string }[] {
   const rows: { id: string; title: string; href: string }[] = [];
   for (const event of state.events) {
-    if (!event.resolved) rows.push({ id: event.id, title: event.title, href: `/dashboard#event-${event.id}` });
+    if (event.resolved || !event.choices?.length) continue;
+    if (event.expires && cmpDate(event.expires, state.date) < 0) continue;
+    rows.push({ id: event.id, title: event.title, href: `/dashboard#event-${event.id}` });
   }
   for (const offer of state.offers) {
     if (offer.status !== "pending") continue;
+    if (offer.expires && cmpDate(offer.expires, state.date) < 0) continue;
     const client = state.clients.find((row) => row.personId === offer.personId && row.agency === "player");
-    if (!client) continue;
     const project = state.projects.find((row) => row.id === offer.projectId);
-    rows.push({ id: offer.id, title: `${client.name}: ${project?.title ?? "an offer"}`, href: `/offers?offer=${offer.id}` });
+    if (!client || !project) continue;
+    rows.push({ id: offer.id, title: `${client.name}: ${project.title}`, href: `/offers?offer=${offer.id}` });
   }
   for (const approach of state.approaches) {
-    if (approach.status === "pending") rows.push({ id: approach.id, title: `${approach.name} wants a meeting`, href: `/meetings/${approach.id}` });
+    if (approach.status !== "pending") continue;
+    if (approach.expires && cmpDate(approach.expires, state.date) < 0) continue;
+    rows.push({ id: approach.id, title: `${approach.name} wants a meeting`, href: `/meetings/${approach.id}` });
   }
   for (const deal of state.brandDeals) {
-    if (deal.status === "offered") rows.push({ id: deal.id, title: `${deal.personName}: ${deal.brand}`, href: `/agency#brand-${deal.id}` });
+    if (deal.status !== "offered") continue;
+    if (deal.end && cmpDate(deal.end, state.date) < 0) continue;
+    const client = state.clients.find((row) => row.personId === deal.personId && row.agency === "player");
+    if (!client) continue;
+    rows.push({ id: deal.id, title: `${deal.personName}: ${deal.brand}`, href: `/agency#brand-${deal.id}` });
   }
   for (const invite of state.talkInvites ?? []) {
     if (invite.status !== "pending") continue;
     const show = TALK_SHOWS.find((row) => row.id === invite.showId);
-    const client = state.clients.find((row) => row.personId === invite.personId);
-    rows.push({ id: invite.id, title: `${client?.name ?? "A client"} invited to ${show?.name ?? "a talk show"}`, href: `/talk#invite-${invite.id}` });
+    const client = state.clients.find((row) => row.personId === invite.personId && row.agency === "player");
+    if (!client || !show) continue;
+    rows.push({ id: invite.id, title: `${client.name} invited to ${show.name}`, href: `/talk#invite-${invite.id}` });
   }
   return rows;
 }
