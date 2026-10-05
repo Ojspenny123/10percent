@@ -19,7 +19,7 @@ function parseEnvValue(value: string): string {
 export function loadLocalEnv(): void {
   // .env.local wins. The other files only fill keys that are still unset,
   // so a host-provided DATABASE_URL is never replaced by a build file.
-  for (const file of [".env", ".env.production", ".env.local"]) {
+  for (const file of [".env", ".env.production", "database.env", ".env.local"]) {
     const path = resolve(process.cwd(), file);
     if (!existsSync(path)) continue;
     for (const raw of readFileSync(path, "utf8").split("\n")) {

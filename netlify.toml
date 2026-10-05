@@ -4,15 +4,16 @@ publish = ".next"
 
 [build.environment]
 NODE_VERSION = "22"
-# The connection string is written at build time and bundled only into the server function.
+# The connection string is generated during the build and shipped only inside the server function.
 SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 SECRETS_SCAN_OMIT_KEYS = "DATABASE_URL"
-SECRETS_SCAN_OMIT_PATHS = ".env.production"
-
-# provision-db.mjs writes .env.production at build time. Ship it with the server
-# functions so DATABASE_URL is available at runtime.
-[functions]
-included_files = [".env.production"]
+SECRETS_SCAN_OMIT_PATHS = ".env.production,database.env,.netlify/functions-internal/**"
 
 [[plugins]]
 package = "@netlify/plugin-nextjs"
+
+# Runs after the Next.js plugin creates the server function, then copies the
+# database URL into that function. A [functions].included_files entry fails the
+# build because the file does not exist until the build command writes it.
+[[plugins]]
+package = "./plugins/include-db-env"
