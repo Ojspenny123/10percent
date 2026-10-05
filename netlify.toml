@@ -4,6 +4,10 @@ publish = ".next"
 
 [build.environment]
 NODE_VERSION = "22"
+# The connection string is written at build time and bundled only into the server function.
+SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
+SECRETS_SCAN_OMIT_KEYS = "DATABASE_URL"
+SECRETS_SCAN_OMIT_PATHS = ".env.production"
 
 # provision-db.mjs writes .env.production at build time. Ship it with the server
 # functions so DATABASE_URL is available at runtime.
