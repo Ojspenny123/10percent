@@ -27,6 +27,7 @@ import type {
   Catalog,
   Client,
   FinancePlan,
+  GameDate,
   GameState,
   Production,
   Project,
@@ -402,10 +403,41 @@ function splitAmount(total: number, parts: number): number[] {
   return rows;
 }
 
-export function scheduleTalentPay(state: GameState, project: Project): void {
-  if (project.kind !== "film") return;
+/** Tell the player what a client's backend points turned into, including when they turned into nothing. */
+function explainBackend(
+  state: GameState,
+  project: Project,
+  row: { personId: number; name: string; backend: number; commissionRate: number },
+  agencyProfit: number,
+): void {
+  const member = project.cast.find((item) => item.personId === row.personId);
+  if (!member || member.backend <= 0 || (member.backendStyle ?? "box_office") === "none") return;
+  const id = `in_backend_${project.id}_${row.personId}`;
+  if (state.inbox.some((item) => item.id === id)) return;
+  const commission = Math.round((row.backend * row.commissionRate) / 100);
+  const body =
+    row.backend > 0
+      ? `${row.name} earns about $${Math.round(row.backend).toLocaleString("en-US")} in backend. Your ${row.commissionRate}% is about $${commission.toLocaleString("en-US")}, paid week by week as the film earns${member.backendStyle === "net" ? " once it is in profit" : ""}.`
+      : member.backendStyle === "net"
+        ? `${row.name} has ${member.backend} net points, which only pay once the film is in profit. The picture was about $${Math.max(0, Math.round(-agencyProfit)).toLocaleString("en-US")} short, so the backend is $0.`
+        : `${row.name} has ${member.backend} points, but the film took too little in rentals for them to pay anything.`;
+  state.inbox.unshift({
+    id,
+    date: { ...state.date },
+    kind: "money",
+    title: row.backend > 0 ? `Backend on ${project.title}: ${row.name}` : `No backend on ${project.title}: ${row.name}`,
+    body,
+    href: "/finance",
+    read: false,
+    resolved: false,
+  });
+}
+
+type WaterfallInput = Parameters<typeof runWaterfall>[0];
+
+/** Everything the waterfall needs for a released film, built from the save as it stands. */
+function waterfallFor(state: GameState, project: Project): { production: Production | undefined; input: WaterfallInput } {
   lists(state);
-  if (state.payouts!.some((row) => row.projectId === project.id)) return;
   const production = state.productions!.find((row) => row.projectId === project.id);
   if (project.streamingTotal == null && production?.distribution !== "sale") {
     const concept = production?.concepts[production.conceptIndex ?? -1];
@@ -431,42 +463,102 @@ export function scheduleTalentPay(state: GameState, project: Project): void {
       commissionRate: client?.contract?.commission ?? 10,
     };
   });
-  const sale = production?.distribution === "sale" ? production.salePrice : undefined;
-  const waterfall = runWaterfall({
-    domestic: project.domesticTotal ?? 0,
-    international: project.internationalTotal ?? 0,
-    streaming: project.streamingTotal ?? 0,
-    budget: production?.budget || project.budget,
-    marketing: project.marketing,
-    distributorRate: production?.distributorFee ?? 0.22,
-    investorShare: production?.investorShare ?? 0,
-    loanBalance: state.loans!.filter((loan) => loan.productionId === production?.id).reduce((sum, loan) => sum + loan.balance, 0),
-    talent,
-    sale,
-  });
+  const loanBalance = state.loans!.filter((loan) => loan.productionId === production?.id).reduce((sum, loan) => sum + loan.balance, 0);
+  return {
+    production,
+    input: {
+      domestic: project.domesticTotal ?? 0,
+      international: project.internationalTotal ?? 0,
+      streaming: project.streamingTotal ?? 0,
+      budget: production?.budget || project.budget,
+      marketing: project.marketing,
+      distributorRate: production?.distributorFee ?? 0.22,
+      investorShare: production?.investorShare ?? 0,
+      loanBalance,
+      talent,
+      sale: production?.distribution === "sale" ? production.salePrice : undefined,
+    },
+  };
+}
+
+/**
+ * Backend follows the box office. Each week's payout is the extra backend earned once that week's
+ * takings are counted, so net points only start once the picture is in profit. The last step lands
+ * after the streaming window and settles the full amount.
+ *
+ * `start` is the release date and `paid` is what the client has already been paid (talent terms).
+ * Steps that fell due before today are rolled into one catch-up payout due now.
+ */
+function planBackend(
+  state: GameState,
+  project: Project,
+  input: WaterfallInput,
+  row: { personId: number; backend: number },
+  start: GameDate,
+  paid: number,
+): { amount: number; due: GameDate }[] {
+  const weekly = (project.weeklyGross ?? []).filter((n) => n > 0);
+  const weeklyTotal = weekly.reduce((sum, n) => sum + n, 0);
+  const steps: { due: GameDate; cumulative: number }[] = [];
+  if (weeklyTotal > 0) {
+    let running = 0;
+    weekly.forEach((n, index) => {
+      running += n;
+      const fraction = running / weeklyTotal;
+      const partial = runWaterfall({
+        ...input,
+        domestic: input.domestic * fraction,
+        international: input.international * fraction,
+        sale: input.sale != null ? input.sale * fraction : undefined,
+        streaming: 0,
+      });
+      steps.push({ due: addWeeks(start, index + 1), cumulative: partial.talent.find((item) => item.personId === row.personId)?.backend ?? 0 });
+    });
+    steps.push({ due: addWeeks(start, weekly.length + 10), cumulative: row.backend });
+  } else {
+    [2, 8, 16, 28].forEach((weeks, index) => steps.push({ due: addWeeks(start, weeks), cumulative: (row.backend * (index + 1)) / 4 }));
+  }
+  const plan: { amount: number; due: GameDate }[] = [];
+  let running = paid;
+  let catchUp = 0;
+  for (const step of steps) {
+    const amount = Math.round(Math.min(row.backend, step.cumulative) - running);
+    if (amount <= 0) continue;
+    running += amount;
+    if (cmpDate(step.due, state.date) <= 0) catchUp += amount;
+    else plan.push({ amount, due: step.due });
+  }
+  if (catchUp > 0) plan.unshift({ amount: catchUp, due: { ...state.date } });
+  return plan;
+}
+
+export function scheduleTalentPay(state: GameState, project: Project): void {
+  if (project.kind !== "film") return;
+  lists(state);
+  if (state.payouts!.some((row) => row.projectId === project.id)) return;
+  const { production, input } = waterfallFor(state, project);
+  const waterfall = runWaterfall(input);
   if (production) {
     production.waterfall = { lines: waterfall.lines, agencyProfit: waterfall.agencyProfit };
     production.sleeper = Boolean(project.sleeper);
     production.stage = "released";
   }
-  const weeks = [2, 8, 16, 28];
   for (const row of waterfall.talent) {
     if (!row.isPlayerClient) continue;
-    const chunks = splitAmount(row.backend, 4);
-    chunks.forEach((amount, index) => {
-      if (amount <= 0) return;
+    explainBackend(state, project, row, waterfall.agencyProfit);
+    for (const step of planBackend(state, project, input, row, state.date, 0)) {
       state.payouts!.push({
         id: nextId(state, "pay"),
         projectId: project.id,
         personId: row.personId,
         name: row.name,
         kind: "backend",
-        amount,
+        amount: step.amount,
         commissionRate: row.commissionRate,
-        due: addWeeks(state.date, weeks[index] ?? 8),
+        due: step.due,
         paid: false,
       });
-    });
+    }
     if (row.bonuses > 0) {
       state.payouts!.push({
         id: nextId(state, "pay"),
@@ -507,6 +599,93 @@ export function scheduleTalentPay(state: GameState, project: Project): void {
       loan.balance -= pay;
     }
   }
+}
+
+/** Backend, as a number: bump when the way backend is paid changes and old saves need re-running. */
+export const BACKEND_MODEL = 2;
+const MIGRATION_WEEKS = 104;
+
+/**
+ * Brings films released in the last two years onto the weekly backend rules.
+ * What a client has already been paid is kept. Anything still unpaid is replaced by the weekly
+ * schedule, and weeks that have already gone by are paid as one catch-up. Nothing is clawed back
+ * if the old rules paid more. Own-production profit and loan repayments are left alone.
+ */
+export function migrateBackend(state: GameState): void {
+  if ((state.backendModel ?? 1) >= BACKEND_MODEL) return;
+  lists(state);
+  const earliest = addWeeks(state.date, -MIGRATION_WEEKS);
+  let films = 0;
+  let catchUp = 0;
+  let scheduled = 0;
+  for (const project of state.projects) {
+    if (project.kind !== "film" || project.cancelled || project.historical) continue;
+    if (cmpDate(project.release, state.date) > 0 || cmpDate(project.release, earliest) < 0) continue;
+    if (!project.totalGross && !project.domesticTotal) continue;
+    const backendMembers = project.cast.filter((member) => member.backend > 0 && (member.backendStyle ?? "box_office") !== "none");
+    if (!backendMembers.length) continue;
+    const before = state.payouts!.filter((row) => row.projectId === project.id);
+    const { input } = waterfallFor(state, project);
+    const hadPayouts = before.length > 0;
+    const talent = input.talent.map((row) => ({ ...row, isPlayerClient: row.isPlayerClient || before.some((payout) => payout.personId === row.personId) }));
+    const waterfall = runWaterfall({ ...input, talent });
+    let touched = false;
+    for (const row of waterfall.talent) {
+      if (!row.isPlayerClient) continue;
+      const member = project.cast.find((item) => item.personId === row.personId);
+      if (!member || member.backend <= 0 || (member.backendStyle ?? "box_office") === "none") continue;
+      const mine = before.filter((payout) => payout.kind === "backend" && payout.personId === row.personId);
+      const rate = mine[0]?.commissionRate ?? row.commissionRate;
+      const legacyCommission = state.ledger
+        .filter((entry) => entry.label === `Backend points · ${row.name} · ${project.title}`)
+        .reduce((sum, entry) => sum + entry.amount, 0);
+      const paid =
+        mine.filter((payout) => payout.paid).reduce((sum, payout) => sum + payout.amount, 0) +
+        (rate > 0 ? Math.round((legacyCommission * 100) / rate) : 0);
+      state.payouts = state.payouts!.filter((payout) => !(payout.projectId === project.id && payout.kind === "backend" && payout.personId === row.personId && !payout.paid));
+      const plan = planBackend(state, project, input, row, project.release, paid);
+      for (const step of plan) {
+        state.payouts.push({
+          id: nextId(state, "pay"),
+          projectId: project.id,
+          personId: row.personId,
+          name: row.name,
+          kind: "backend",
+          amount: step.amount,
+          commissionRate: rate,
+          due: step.due,
+          paid: false,
+        });
+        const commission = Math.round((step.amount * rate) / 100);
+        if (cmpDate(step.due, state.date) <= 0) catchUp += commission;
+        else scheduled += 1;
+        touched = true;
+      }
+      if (!hadPayouts && row.bonuses > 0) {
+        state.payouts.push({
+          id: nextId(state, "pay"),
+          projectId: project.id,
+          personId: row.personId,
+          name: row.name,
+          kind: "bonus",
+          amount: row.bonuses,
+          commissionRate: rate,
+          due: cmpDate(addWeeks(project.release, 10), state.date) > 0 ? addWeeks(project.release, 10) : { ...state.date },
+          paid: false,
+        });
+        touched = true;
+      }
+    }
+    if (touched) films += 1;
+  }
+  state.backendModel = BACKEND_MODEL;
+  if (films === 0) return;
+  note(
+    state,
+    `Backend recalculated on ${films} recent film${films === 1 ? "" : "s"}`,
+    `Backend now pays week by week as a film earns, and box-office points pay on rentals. Films from the last two years were re-run. ${catchUp > 0 ? `Commission already owed, about $${catchUp.toLocaleString("en-US")}, lands next week. ` : ""}${scheduled > 0 ? `${scheduled} more weekly payment${scheduled === 1 ? "" : "s"} are scheduled.` : "Nothing more is scheduled."}`,
+    "/finance",
+  );
 }
 
 export function applySleeper(state: GameState, project: Project): void {

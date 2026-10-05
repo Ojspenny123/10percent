@@ -1,4 +1,4 @@
-import { acceptOffer, applyEventChoice, book, bumpRep, closeApproachInbox, closeInbox, declineOffer, pushApproach, tierBias } from "./actions";
+import { acceptOffer, applyEventChoice, book, bumpRep, closeApproachInbox, closeInbox, declineOffer, pushApproach, resolveBrand, tierBias } from "./actions";
 import {
   buildBlocks,
   dealBlurb,
@@ -34,7 +34,7 @@ import {
 } from "./generate";
 import { quotePackage } from "./money";
 import { advanceMoney, applySleeper, resolveInsolvency, scheduleTalentPay } from "./productions";
-import { cityOf, blocksStudioOffer, markInformationalRead, openDecisions, tickV7, agentPlan } from "./v7";
+import { cityOf, blocksStudioOffer, markInformationalRead, openDecisions, tickV7, agentPlan, agentHandles, resolveTalk } from "./v7";
 import { sameCountry } from "./rivals";
 import { agencyTier, clamp, clientFromCatalog, expectedFee, fameFromStar, isEligible, traitHints } from "./people";
 import { chance, float, int, pick } from "./rng";
@@ -155,15 +155,44 @@ function stepWeek(state: GameState, catalog: Catalog, options: AdvanceOptions): 
 }
 
 function settleWithAgents(state: GameState): void {
+  const note = (text: string) => {
+    state.agentNotes ??= [];
+    state.agentNotes.unshift({ date: { ...state.date }, text });
+  };
   const pending = state.offers.filter((offer) => offer.status === "pending");
   for (const offer of pending) {
     const plan = agentPlan(state, offer);
     if (plan === "escalate") continue;
-    const result = plan === "accept" ? acceptOffer(state, offer.id, true) : declineOffer(state, offer.id);
+    let result = plan === "accept" ? acceptOffer(state, offer.id, true) : declineOffer(state, offer.id);
+    if (!result.ok && plan === "accept") {
+      // The agent wanted the job but it cannot be taken (calendar clash etc.).
+      // They turn it down rather than hand a settled decision back to the player.
+      const declined = declineOffer(state, offer.id);
+      if (declined.ok) result = { ...declined, message: `${result.message} Turned down instead.` };
+    }
     if (!result.ok) continue;
     copyState(state, result.state);
-    state.agentNotes ??= [];
-    state.agentNotes.unshift({ date: { ...state.date }, text: result.message });
+    note(result.message);
+  }
+  // Brand deals: agents take them, subject to the same fee threshold rule.
+  for (const deal of [...state.brandDeals]) {
+    if (deal.status !== "offered") continue;
+    if (!agentHandles(state, deal.personId, deal.fee)) continue;
+    const result = resolveBrand(state, deal.id, true);
+    if (!result.ok) continue;
+    copyState(state, result.state);
+    note(result.message);
+  }
+  // Talk show invites: agents accept them unless the client is blocked.
+  for (const invite of [...(state.talkInvites ?? [])]) {
+    if (invite.status !== "pending") continue;
+    if (!agentHandles(state, invite.personId, 0)) continue;
+    const result = resolveTalk(state, invite.id, true);
+    if (!result.ok) {
+      resolveTalk(state, invite.id, false);
+    }
+    closeInbox(state, invite.id);
+    note(result.ok ? result.message : "Passed on a talk show invite (client not free).");
   }
 }
 

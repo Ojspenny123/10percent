@@ -56,6 +56,7 @@ export function createGame(input: { agencyName: string; era: Era; seed: number; 
     productions: [],
     loans: [],
     payouts: [],
+    backendModel: 2,
     gameOver: false,
   };
   state.agency.cityId = cityById(input.cityId)?.id ?? "los-angeles";

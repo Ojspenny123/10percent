@@ -102,11 +102,11 @@ export function quotePackage(input: {
   const high = fee + roundMoney(participation) + bonusSum;
   const styleLine =
     style === "first_dollar"
-      ? `${points} first-dollar points on theatrical rentals, paid before the budget is recouped`
+      ? `${points} first-dollar points on theatrical rentals, paid weekly as the film earns`
       : style === "box_office"
-        ? `${points} points of box office, paid from profit after costs`
+        ? `${points} points on rentals after the distributor fee, paid weekly as the film earns`
         : style === "net"
-          ? `${points} net points after the film recoups`
+          ? `${points} net points, paid weekly once the film is in profit`
           : "no backend";
   return {
     fee,
@@ -223,6 +223,20 @@ export function runWaterfall(input: {
     pot -= firstDollar;
   }
 
+  // Box-office points are a share of rentals after the distributor fee. They pay as the
+  // picture earns, before marketing and the budget are recouped.
+  let boxOffice = 0;
+  input.talent.forEach((row, index) => {
+    if (row.style !== "box_office" || row.points <= 0) return;
+    const pay = roundMoney(Math.max(0, theatricalRentals - distributorFee) * (row.points / 100));
+    talentPay[index]!.backend += pay;
+    boxOffice += pay;
+  });
+  if (boxOffice > 0) {
+    lines.push({ label: "Box-office participations", amount: -boxOffice, note: "Points on theatrical rentals after the distributor fee, paid before the budget is recouped." });
+    pot -= boxOffice;
+  }
+
   const marketing = Math.max(0, input.marketing);
   const budget = Math.max(0, input.budget);
   lines.push({ label: "Marketing and P&A", amount: -marketing, note: "Recouped before production cost." });
@@ -261,7 +275,6 @@ export function runWaterfall(input: {
 
   let participation = 0;
   const claims = input.talent.map((row) => {
-    if (row.style === "box_office") return roundMoney(gross * (row.points / 100));
     if (row.style === "net") return roundMoney(Math.max(0, pot) * (row.points / 100));
     return 0;
   });
@@ -276,7 +289,7 @@ export function runWaterfall(input: {
     });
   }
   pot -= participation;
-  if (participation > 0) lines.push({ label: "Talent backend", amount: -participation, note: "Box-office points and net points from what remains." });
+  if (participation > 0) lines.push({ label: "Talent backend", amount: -participation, note: "Net points from what remains once the picture is in profit." });
 
   const agencyProfit = roundMoney(pot);
   lines.push({

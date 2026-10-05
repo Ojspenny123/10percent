@@ -1,4 +1,5 @@
 import { migrateCareer } from "@/engine/career";
+import { migrateBackend } from "@/engine/productions";
 import type { GameState } from "@/engine/types";
 
 export function parseState(value: unknown): GameState {
@@ -71,5 +72,6 @@ export function parseState(value: unknown): GameState {
     project.cast ??= [];
   }
   migrateCareer(state);
+  migrateBackend(state);
   return state;
 }

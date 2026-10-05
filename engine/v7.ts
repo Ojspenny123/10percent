@@ -568,6 +568,16 @@ export function blocksStudioOffer(state: GameState, tier: string, filmStar: numb
   return !keepBigOffer(city.hub, tier, filmStar, state.agency.reputation, next(rng));
 }
 
+/** True when the client's agent should settle a routine item (brand deal, talk invite) without asking the player. */
+export function agentHandles(state: GameState, personId: number, fee: number): boolean {
+  const client = state.clients.find((row) => row.personId === personId && row.agency === "player");
+  if (!client?.agentId) return false;
+  const agent = state.agents?.find((row) => row.id === client.agentId);
+  if (!agent || agent.autonomy === "important") return false;
+  if (agent.autonomy === "threshold" && fee >= agent.feeThreshold) return false;
+  return true;
+}
+
 export function agentPlan(state: GameState, offer: Offer): "accept" | "decline" | "escalate" {
   const client = state.clients.find((row) => row.personId === offer.personId && row.agency === "player");
   if (!client?.agentId) return "escalate";

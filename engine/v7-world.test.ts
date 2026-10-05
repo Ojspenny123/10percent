@@ -7,7 +7,7 @@ import { keepBigOffer } from "./places";
 import { tickRivals } from "./rivals";
 import { addWeeks, scheduleConflict } from "./schedule";
 import { advanceWeeks } from "./turn";
-import { agentPlan, assignAgent, buyUpgrade, hireAgent, hireExecutive, hirePublicist, informationalUnread, launchCampaign, markInformationalRead, openDecisions, openSatellite, projectedBonus, relocateAgency, setAgent, setExecLimits, staffWeekly, talkBlock } from "./v7";
+import { agentHandles, agentPlan, assignAgent, buyUpgrade, hireAgent, hireExecutive, hirePublicist, informationalUnread, launchCampaign, markInformationalRead, openDecisions, openSatellite, projectedBonus, relocateAgency, setAgent, setExecLimits, staffWeekly, talkBlock } from "./v7";
 import type { Executive, GameState, Offer } from "./types";
 
 const catalog = fixtureCatalog();
@@ -135,6 +135,41 @@ describe("v7 office, decisions, staff, bonuses", () => {
     if (overflow) expect(assignAgent(state, overflow.personId, agent.id).ok).toBe(false);
   });
 
+  it("lets a full-autonomy agent settle brand deals and talk invites", () => {
+    let state = fresh();
+    state = signClient(state, catalog, 10, { commission: 10, years: 2, exclusive: true, exitClause: true }).state;
+    expect(hireAgent(state).ok).toBe(true);
+    const agent = state.agents![0]!;
+    expect(assignAgent(state, 10, agent.id).ok).toBe(true);
+    const client = state.clients.find((row) => row.personId === 10)!;
+
+    setAgent(state, agent.id, { autonomy: "important" });
+    expect(agentHandles(state, 10, 100_000)).toBe(false);
+    setAgent(state, agent.id, { autonomy: "threshold", feeThreshold: 50_000 });
+    expect(agentHandles(state, 10, 100_000)).toBe(false);
+    expect(agentHandles(state, 10, 10_000)).toBe(true);
+    setAgent(state, agent.id, { autonomy: "full" });
+    expect(agentHandles(state, 10, 5_000_000)).toBe(true);
+    client.agentId = null;
+    expect(agentHandles(state, 10, 1)).toBe(false);
+    client.agentId = agent.id;
+
+    state.brandDeals.unshift({
+      id: "brand_test",
+      personId: 10,
+      personName: client.name,
+      brand: "Test Brand",
+      fee: 200_000,
+      start: { ...state.date },
+      end: addWeeks(state.date, 12),
+      status: "offered",
+    });
+    state.talkInvites = [{ id: "tinv_test", personId: 10, showId: "fallon", date: { ...state.date }, status: "pending" }];
+    const next = advanceWeeks(state, catalog, 1, { autoResolveEvents: false }).state;
+    expect(next.brandDeals.find((deal) => deal.id === "brand_test")?.status).not.toBe("offered");
+    expect(next.talkInvites?.find((row) => row.id === "tinv_test")?.status).not.toBe("pending");
+  });
+
   it("pays a profit bonus and skips it in a loss year", () => {
     const state = fresh();
     state.executives = [{
@@ -228,7 +263,7 @@ describe("v7 rivals", () => {
       expect(state.date.year).toBeGreaterThanOrEqual(2030);
     }
     expect(Date.now() - started).toBeLessThan(60_000);
-  });
+  }, 60_000);
 });
 
 describe("v7 publicity, executives, and unread mail", () => {

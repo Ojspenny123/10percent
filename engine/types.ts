@@ -731,6 +731,8 @@ export type GameState = {
   productions?: Production[];
   loans?: Loan[];
   payouts?: TalentPayout[];
+  /** 2 = weekly backend that follows the box office. Older saves are migrated once on load. */
+  backendModel?: number;
   /** Set when emergency financing cannot cover a long cash hole. */
   gameOver?: boolean;
   agents?: FirmAgent[];

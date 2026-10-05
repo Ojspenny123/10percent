@@ -12,8 +12,9 @@ import {
   sleeperWeeks,
   upfrontFee,
 } from "./money";
-import { attachCast, attachDirector, chooseConcept, chooseDistribution, developProduction, financeProduction, resolveInsolvency, scheduleTalentPay, serviceLoans, settlePayouts } from "./productions";
+import { migrateBackend, attachCast, attachDirector, chooseConcept, chooseDistribution, developProduction, financeProduction, resolveInsolvency, scheduleTalentPay, serviceLoans, settlePayouts } from "./productions";
 import { makeRng } from "./rng";
+import { addWeeks } from "./schedule";
 import { advanceWeeks } from "./turn";
 import type { BudgetTier, FameTier, GameState } from "./types";
 
@@ -93,9 +94,9 @@ describe("waterfall", () => {
     });
     expect(result.exhibitor).toBe(900);
     expect(result.distributorFee).toBe(220);
-    expect(result.investorTake).toBe(190);
-    expect(result.talent[0]!.backend).toBe(190);
-    expect(result.agencyProfit).toBe(0);
+    expect(result.talent[0]!.backend).toBe(88);
+    expect(result.investorTake).toBe(146);
+    expect(result.agencyProfit).toBe(146);
     expect(result.lines.some((line) => line.label === "Agency profit")).toBe(true);
   });
 
@@ -130,6 +131,184 @@ describe("waterfall", () => {
     expect(paid.length).toBeGreaterThan(0);
     expect(state.agency.cash).toBeGreaterThan(before);
     expect(state.ledger.some((row) => row.bucket === "backend")).toBe(true);
+  });
+});
+
+describe("weekly backend", () => {
+  function filmWithBackend(gross: number, style: "box_office" | "net" | "first_dollar" = "box_office") {
+    const state = fresh(4);
+    const project = state.projects.find((row) => row.kind === "film" && row.cast.length > 0)!;
+    const weights = [0.3, 0.22, 0.15, 0.1, 0.08, 0.06, 0.05, 0.04];
+    const domestic = gross * 0.45;
+    project.weeklyGross = weights.map((weight) => Math.round(domestic * weight));
+    project.domesticTotal = project.weeklyGross.reduce((sum, n) => sum + n, 0);
+    project.internationalTotal = gross * 0.55;
+    project.streamingTotal = 0;
+    project.budget = 20_000_000;
+    project.marketing = 8_000_000;
+    project.budgetTier = "mid";
+    project.cast = [{ ...project.cast[0]!, personId: 4, name: "Actor 4", isPlayerClient: true, backend: 5, backendStyle: style, bonuses: [], fee: 2_000_000 }];
+    scheduleTalentPay(state, project);
+    const backend = state.payouts!.filter((row) => row.kind === "backend");
+    return { state, project, backend };
+  }
+
+  it("pays box-office points on rentals every week, even before the film is in profit", () => {
+    const { state, backend } = filmWithBackend(28_000_000 * 1.2);
+    expect(backend.length).toBeGreaterThanOrEqual(6);
+    const dues = backend.map((row) => row.due.year * 52 + row.due.week);
+    expect(new Set(dues).size).toBe(dues.length);
+    expect(dues).toEqual([...dues].sort((a, b) => a - b));
+    expect(backend.every((row) => !row.paid)).toBe(true);
+    const before = state.agency.cash;
+    state.date = { ...backend[0]!.due };
+    settlePayouts(state);
+    expect(state.agency.cash).toBeGreaterThan(before);
+    expect(state.payouts!.filter((row) => row.kind === "backend" && row.paid)).toHaveLength(1);
+  });
+
+  it("adds up to what the waterfall says the client earned", () => {
+    const { state, project, backend } = filmWithBackend(28_000_000 * 3);
+    const total = backend.reduce((sum, row) => sum + row.amount, 0);
+    const result = runWaterfall({
+      domestic: project.domesticTotal ?? 0,
+      international: project.internationalTotal ?? 0,
+      streaming: 0,
+      budget: project.budget,
+      marketing: project.marketing,
+      distributorRate: 0.22,
+      investorShare: 0,
+      loanBalance: 0,
+      talent: [{ personId: 4, name: "Actor 4", upfront: 2_000_000, style: "box_office", points: 5, bonuses: [], isPlayerClient: true, commissionRate: 10 }],
+    });
+    expect(Math.abs(total - result.talent[0]!.backend)).toBeLessThanOrEqual(2);
+    expect(state.inbox.some((item) => item.title.startsWith("Backend on"))).toBe(true);
+  });
+
+  it("starts net points only once the film is in profit", () => {
+    const boxOffice = filmWithBackend(28_000_000 * 3, "box_office");
+    const net = filmWithBackend(28_000_000 * 3, "net");
+    expect(net.backend.length).toBeGreaterThan(0);
+    const week = (row: { due: { year: number; week: number } }) => row.due.year * 52 + row.due.week;
+    expect(week(net.backend[0]!)).toBeGreaterThan(week(boxOffice.backend[0]!));
+  });
+
+  it("pays nothing, and says why, when net points never reach profit", () => {
+    const { state, project, backend } = filmWithBackend(28_000_000 * 1.2, "net");
+    expect(backend).toHaveLength(0);
+    const note = state.inbox.find((item) => item.id === `in_backend_${project.id}_4`);
+    expect(note?.title).toContain("No backend");
+    expect(note?.body).toContain("short");
+  });
+});
+
+describe("backend migration for existing saves", () => {
+  function oldSave(weeksAgo: number) {
+    const state = fresh(4);
+    delete state.backendModel;
+    const project = state.projects.find((row) => row.kind === "film" && row.cast.length > 0)!;
+    const weights = [0.3, 0.22, 0.15, 0.1, 0.08, 0.06, 0.05, 0.04];
+    const gross = 28_000_000 * 3;
+    project.historical = false;
+    project.cancelled = false;
+    project.release = addWeeks(state.date, -weeksAgo);
+    project.weeklyGross = weights.map((weight) => Math.round(gross * 0.45 * weight));
+    project.domesticTotal = project.weeklyGross.reduce((sum, n) => sum + n, 0);
+    project.internationalTotal = gross * 0.55;
+    project.totalGross = gross;
+    project.streamingTotal = 0;
+    project.budget = 20_000_000;
+    project.marketing = 8_000_000;
+    project.budgetTier = "mid";
+    project.cast = [{ ...project.cast[0]!, personId: 4, name: "Actor 4", isPlayerClient: true, backend: 5, backendStyle: "box_office", bonuses: [], fee: 2_000_000 }];
+    return { state, project };
+  }
+  const expectedBackend = (project: { domesticTotal?: number; internationalTotal?: number; budget: number; marketing: number }) =>
+    runWaterfall({
+      domestic: project.domesticTotal ?? 0,
+      international: project.internationalTotal ?? 0,
+      streaming: 0,
+      budget: project.budget,
+      marketing: project.marketing,
+      distributorRate: 0.22,
+      investorShare: 0,
+      loanBalance: 0,
+      talent: [{ personId: 4, name: "Actor 4", upfront: 2_000_000, style: "box_office", points: 5, bonuses: [], isPlayerClient: true, commissionRate: 10 }],
+    }).talent[0]!.backend;
+  const talentTotal = (state: ReturnType<typeof fresh>, projectId: string) =>
+    state.payouts!.filter((row) => row.projectId === projectId && row.kind === "backend").reduce((sum, row) => sum + row.amount, 0);
+
+  it("replaces the old lump-sum schedule and keeps what was already paid", () => {
+    const { state, project } = oldSave(30);
+    state.payouts = [
+      { id: "old1", projectId: project.id, personId: 4, name: "Actor 4", kind: "backend", amount: 100_000, commissionRate: 10, due: addWeeks(project.release, 2), paid: true },
+      { id: "old2", projectId: project.id, personId: 4, name: "Actor 4", kind: "backend", amount: 100_000, commissionRate: 10, due: addWeeks(project.release, 8), paid: true },
+      { id: "old3", projectId: project.id, personId: 4, name: "Actor 4", kind: "backend", amount: 100_000, commissionRate: 10, due: addWeeks(state.date, 3), paid: false },
+    ];
+    migrateBackend(state);
+    expect(state.backendModel).toBe(2);
+    expect(state.payouts!.some((row) => row.id === "old3")).toBe(false);
+    expect(state.payouts!.filter((row) => row.id === "old1" || row.id === "old2")).toHaveLength(2);
+    const total = talentTotal(state, project.id);
+    expect(Math.abs(total - expectedBackend(project))).toBeLessThanOrEqual(3);
+    const unpaid = state.payouts!.filter((row) => row.kind === "backend" && !row.paid);
+    expect(unpaid.every((row) => row.amount > 0)).toBe(true);
+    expect(state.inbox.some((item) => item.title.startsWith("Backend recalculated"))).toBe(true);
+  });
+
+  it("pays the weeks already gone as one catch-up, then the rest weekly", () => {
+    const { state, project } = oldSave(4);
+    state.payouts = [];
+    migrateBackend(state);
+    const rows = state.payouts!.filter((row) => row.kind === "backend");
+    const today = state.date.year * 52 + state.date.week;
+    const due = (row: (typeof rows)[number]) => row.due.year * 52 + row.due.week;
+    expect(rows.filter((row) => due(row) <= today)).toHaveLength(1);
+    expect(rows.filter((row) => due(row) > today).length).toBeGreaterThan(2);
+    const before = state.agency.cash;
+    settlePayouts(state);
+    expect(state.agency.cash).toBeGreaterThan(before);
+    expect(talentTotal(state, project.id)).toBeGreaterThan(0);
+  });
+
+  it("does nothing the second time", () => {
+    const { state } = oldSave(10);
+    state.payouts = [];
+    migrateBackend(state);
+    const snapshot = JSON.stringify(state.payouts);
+    const notes = state.inbox.length;
+    migrateBackend(state);
+    expect(JSON.stringify(state.payouts)).toBe(snapshot);
+    expect(state.inbox.length).toBe(notes);
+  });
+
+  it("leaves films older than two years and unreleased films alone", () => {
+    const old = oldSave(130);
+    old.state.payouts = [];
+    migrateBackend(old.state);
+    expect(old.state.payouts).toHaveLength(0);
+    const future = oldSave(-6);
+    future.state.payouts = [];
+    migrateBackend(future.state);
+    expect(future.state.payouts).toHaveLength(0);
+  });
+
+  it("does not claw back when the old rules paid more", () => {
+    const { state, project } = oldSave(40);
+    state.payouts = [{ id: "big", projectId: project.id, personId: 4, name: "Actor 4", kind: "backend", amount: 9_000_000, commissionRate: 10, due: addWeeks(project.release, 2), paid: true }];
+    migrateBackend(state);
+    expect(state.payouts!.filter((row) => row.kind === "backend" && !row.paid)).toHaveLength(0);
+    expect(state.payouts!.find((row) => row.id === "big")?.amount).toBe(9_000_000);
+  });
+
+  it("counts the lump sum older saves booked at release", () => {
+    const { state, project } = oldSave(40);
+    state.payouts = [];
+    state.ledger.unshift({ date: addWeeks(project.release, 0), label: `Backend points · Actor 4 · ${project.title}`, amount: 150_000, balance: state.agency.cash, bucket: "bonus" });
+    migrateBackend(state);
+    const total = talentTotal(state, project.id);
+    // 150,000 of commission at 10% is 1,500,000 of backend already paid, so only the rest is owed.
+    expect(Math.abs(total + 1_500_000 - expectedBackend(project))).toBeLessThanOrEqual(3);
   });
 });
 
